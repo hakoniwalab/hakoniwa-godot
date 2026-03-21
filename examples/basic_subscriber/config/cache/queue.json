@@ -1,0 +1,8 @@
+{
+  "type": "buffer",
+  "name": "godot_queue_buffer",
+  "store": {
+    "mode": "queue",
+    "depth": 32
+  }
+}

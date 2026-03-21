@@ -1,0 +1,6 @@
+{
+  "name": "godot_internal_endpoint",
+  "pdu_def_path": "comm/storage_demo/pdu_def.json",
+  "cache": "cache/buffer.json",
+  "comm": null
+}

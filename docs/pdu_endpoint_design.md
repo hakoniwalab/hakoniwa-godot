@@ -26,14 +26,25 @@ Node ベースで開始する。
 
 - `HakoniwaPduEndpoint`
 
+基本単位:
+
+```text
+1 Node = 1 native endpoint handle
+```
+
 想定メソッド:
 
 ```text
-configure(config: Dictionary) -> void
+open(config_path: String) -> int
+close() -> void
 start() -> int
+post_start() -> int
 stop() -> void
-poll_latest(key: String = "") -> Variant
-poll_next() -> Variant
+process_recv_events() -> void
+recv_by_name(robot: String, pdu_name: String) -> Dictionary
+recv_next() -> Dictionary
+set_recv_event(robot: String, channel_id: int) -> int
+get_pending_count() -> int
 is_running() -> bool
 ```
 
@@ -62,6 +73,25 @@ probe_native_backend() -> bool
 }
 ```
 
+## 今回の区切り
+
+今回のマイルストーンでは、`payload` は `PackedByteArray` のまま扱う。
+
+つまり、この段階で保証するのは以下まで。
+
+- Godot から endpoint を開ける
+- バイナリ payload を送れる
+- バイナリ payload を受け取れる
+- `latest` / `queue` の意味の違いを Godot から使える
+
+## 今回の対象外
+
+以下は次の段階の課題として扱う。
+
+- `PackedByteArray` を `int`, `float`, `Dictionary` などへ decode する層
+- PDU definition に基づく自動 decode
+- 利用者向け typed wrapper / codec API
+
 ## モード設計
 
 ### latest
@@ -87,6 +117,10 @@ probe_native_backend() -> bool
 
 まずは単純性を優先し、poll 中心の設計を基本案とする。
 
+Godot 側では、main loop から caller-controlled に受信を進める。
+
+callback は補助機能として扱い、scene tree 更新の主経路にはしない。
+
 ## エラーハンドリング方針
 
 - 接続失敗は戻り値または `get_last_error()` 相当で参照できるようにする
@@ -98,4 +132,4 @@ probe_native_backend() -> bool
 - config の必須項目
 - ペイロードをそのまま bytes で返すか、デコード層を持つか
 - signal をどこまで提供するか
-- 複数 endpoint の管理方法
+- Node 上の property と method の責務分担

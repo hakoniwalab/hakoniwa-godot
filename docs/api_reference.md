@@ -20,11 +20,17 @@
 
 想定している記載対象:
 
-- `configure(config: Dictionary) -> void`
+- `open(config_path: String) -> int`
+- `close() -> void`
 - `start() -> int`
+- `post_start() -> int`
 - `stop() -> void`
-- `poll_latest(key: String = "") -> Variant`
-- `poll_next() -> Variant`
+- `process_recv_events() -> void`
+- `recv_by_name(robot: String, pdu_name: String) -> Dictionary`
+- `recv_next() -> Dictionary`
+- `set_recv_event(robot: String, channel_id: int) -> int`
+- `get_pending_count() -> int`
+- `send_by_name(robot: String, pdu_name: String, payload: PackedByteArray) -> int`
 - `is_running() -> bool`
 
 実装開始後は、この文書を API の正本として更新する。

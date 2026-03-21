@@ -1,0 +1,6 @@
+{
+  "name": "godot_internal_queue_endpoint",
+  "pdu_def_path": "comm/storage_demo/pdu_def.json",
+  "cache": "cache/queue.json",
+  "comm": null
+}

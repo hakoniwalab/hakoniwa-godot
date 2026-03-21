@@ -15,12 +15,18 @@ Godot Engine を
 
 ## ✅ Current Status
 
-M1 完了:
+現在の到達点:
 
 * Godot プラグインの最小土台を作成
 * GDExtension のビルドに成功
 * Godot から native extension の読み込みに成功
 * `hakoniwa-pdu-endpoint` へのリンク確認に成功
+* `open / start / stop / is_running` の最小 API を実装
+* `send_by_name / recv_by_name` による `latest` 動作確認に成功
+* `recv_next()` による `queue` 動作確認に成功
+* `set_recv_event / get_pending_count` による pending 管理確認に成功
+
+現在のマイルストーンは、**Godot から箱庭 endpoint としてバイナリデータを送受信できるところまで** です。
 
 ---
 
@@ -40,10 +46,19 @@ M1 完了:
 
 ## 🎯 What you can do
 
-* 外部シミュレーションと Godot を接続
-* リアルタイムに状態を受信・表示
-* 外部システムへ操作（RPC）を送信
-* 箱庭の時刻同期に従って動作
+現時点では、以下ができます。
+
+* 外部シミュレーション用 endpoint を Godot から開く
+* バイナリ payload を `latest` モードで送受信する
+* バイナリ payload を `queue` モードで順次受信する
+* `set_recv_event()` と `get_pending_count()` で pending を管理する
+
+現時点では、以下はまだ対象外です。
+
+* PDU payload の自動 decode
+* Godot 利用者向けの typed wrapper / codec
+* `hakoniwa-core-pro` の時間同期統合
+* `hakoniwa-pdu-rpc` の操作系統合
 
 ---
 
@@ -131,6 +146,7 @@ cmake --build build
 * GDExtension が読み込まれる
 * `HakoniwaPduEndpoint` クラスが利用可能になる
 * native 側から `hakoniwa-pdu-endpoint` に到達できる
+* `latest` / `queue` の両方がバイナリ payload ベースで確認できる
 
 ### 5. Verification
 
@@ -149,6 +165,24 @@ Godot Engine v4.6.1.stable.mono.official.14d19694e - https://godotengine.org
 
 hakoniwa-pdu-endpoint
 true
+0
+0
+0
+{ "robot": "drone0", "channel_id": 0, "pdu_name": "sample_state", "timestamp_ns": 0, "payload": [1, 2, 3, 4, 5, 6, 7, 8] }
+true
+0
+0
+0
+0
+0
+3
+{ "robot": "drone0", "channel_id": 0, "pdu_name": "sample_state", "timestamp_ns": 0, "payload": [10] }
+2
+{ "robot": "drone0", "channel_id": 0, "pdu_name": "sample_state", "timestamp_ns": 0, "payload": [11] }
+1
+{ "robot": "drone0", "channel_id": 0, "pdu_name": "sample_state", "timestamp_ns": 0, "payload": [12] }
+0
+{  }
 ```
 
 この結果は、以下を意味します。
@@ -157,6 +191,21 @@ true
 * GDExtension がロードされた
 * `HakoniwaPduEndpoint` クラスが登録された
 * native 側から `hakoniwa-pdu-endpoint` の C API 呼び出しに成功した
+* `latest` モードで send / recv が成立した
+* `queue` モードで `recv_next()` が到着順に成立した
+* `queue` モードで pending count が `3 -> 2 -> 1 -> 0` と減ることを確認した
+
+## 📌 Scope Boundary
+
+この README 時点で保証しているのは、`PackedByteArray` ベースのバイナリ転送までです。
+
+つまり、Godot 利用者は現時点では `payload` を自分で解釈する必要があります。
+
+将来の拡張対象:
+
+* PDU definition に基づく decode
+* `int` / `float` / `Dictionary` などへの変換 helper
+* typed wrapper / codec 層
 
 ---
 
