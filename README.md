@@ -13,6 +13,31 @@ Godot Engine を
 
 ---
 
+## ✅ Current Status
+
+M1 完了:
+
+* Godot プラグインの最小土台を作成
+* GDExtension のビルドに成功
+* Godot から native extension の読み込みに成功
+* `hakoniwa-pdu-endpoint` へのリンク確認に成功
+
+---
+
+## 🔢 Verified Version
+
+2026-03-22 時点の確認済み環境:
+
+* Godot `4.6.1` on macOS
+* `godot-cpp` submodule: `4.5` branch
+
+注記:
+
+* `godot-cpp` は 2026-03-22 時点で公式 `4.6` branch が存在しなかったため、現時点では `4.5` 系を採用しています
+* 今後 `godot-cpp` 側の対応が揃えば更新します
+
+---
+
 ## 🎯 What you can do
 
 * 外部シミュレーションと Godot を接続
@@ -96,15 +121,42 @@ cmake --build build
 ### 3. Run Godot
 
 ```bash
-godot project/
+/Applications/Godot_mono.app/Contents/MacOS/Godot --path examples/basic_subscriber
 ```
 
 ---
 
 ### 4. Observe
 
-* 外部シミュレーションの状態が反映される
-* Godotから操作可能
+* GDExtension が読み込まれる
+* `HakoniwaPduEndpoint` クラスが利用可能になる
+* native 側から `hakoniwa-pdu-endpoint` に到達できる
+
+### 5. Verification
+
+実行手順:
+
+```bash
+cmake -S . -B build
+cmake --build build -j4
+/Applications/Godot_mono.app/Contents/MacOS/Godot --headless --path examples/basic_subscriber --quit
+```
+
+2026-03-22 時点の実際の確認結果:
+
+```text
+Godot Engine v4.6.1.stable.mono.official.14d19694e - https://godotengine.org
+
+hakoniwa-pdu-endpoint
+true
+```
+
+この結果は、以下を意味します。
+
+* Godot プロジェクトが起動できた
+* GDExtension がロードされた
+* `HakoniwaPduEndpoint` クラスが登録された
+* native 側から `hakoniwa-pdu-endpoint` の C API 呼び出しに成功した
 
 ---
 
@@ -149,12 +201,11 @@ Godotのフレームループと連携します。
 
 ```text
 hakoniwa-godot/
-├─ godot/           # Godot project
+├─ addons/          # Godot addon package
 ├─ native/          # GDExtension (C++)
 ├─ third_party/
-│  ├─ hakoniwa-core-pro
-│  ├─ hakoniwa-pdu-endpoint
-│  └─ hakoniwa-pdu-rpc
+│  ├─ godot-cpp
+│  └─ hakoniwa-pdu-endpoint
 ├─ examples/
 └─ docs/
 ```
@@ -196,4 +247,3 @@ hakoniwa はその問題を解決します。
 ## ✨ Summary
 
 > **hakoniwa-godot = Godotを箱庭に接続する最小構成**
-

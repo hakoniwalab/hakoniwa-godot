@@ -1,0 +1,22 @@
+; Engine configuration file.
+; Edit via the editor when possible.
+;
+; Format:
+;   [section]
+;   param=value
+
+config_version=5
+
+[application]
+
+config/name="Hakoniwa Basic Subscriber"
+run/main_scene="res://main.tscn"
+config/features=PackedStringArray("4.5")
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/hakoniwa/plugin.cfg")
+
+[rendering]
+
+renderer/rendering_method="mobile"

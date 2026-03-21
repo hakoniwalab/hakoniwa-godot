@@ -1,0 +1,9 @@
+[configuration]
+
+entry_symbol = "hakoniwa_library_init"
+compatibility_minimum = "4.5"
+
+[libraries]
+
+macos.debug = "res://addons/hakoniwa/bin/libhakoniwa_godot_native.dylib"
+macos.release = "res://addons/hakoniwa/bin/libhakoniwa_godot_native.dylib"

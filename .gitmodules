@@ -1,0 +1,7 @@
+[submodule "third_party/hakoniwa-pdu-endpoint"]
+	path = third_party/hakoniwa-pdu-endpoint
+	url = https://github.com/hakoniwalab/hakoniwa-pdu-endpoint.git
+[submodule "third_party/godot-cpp"]
+	path = third_party/godot-cpp
+	url = https://github.com/godotengine/godot-cpp.git
+	branch = 4.5
