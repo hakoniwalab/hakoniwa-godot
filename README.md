@@ -1,119 +1,120 @@
 # 📦 hakoniwa-godot
 
-(以下の方向性で、現在開発中..)
+> **Godot を箱庭に接続する最小構成**
 
-## 🧠 What is hakoniwa-godot?
+**hakoniwa-godot** は、Godot Engine を箱庭（Hakoniwa）と接続するための統合パッケージです。  
+ゲームエンジンを単なる可視化ツールとしてではなく、**分散シミュレーションの一部として動作させる** ことを目的としています。
 
-**hakoniwa-godot** は、
-Godot Engine を
-箱庭（Hakoniwa）と接続するための統合パッケージです。
+---
 
-ゲームエンジンを単なる可視化ツールとしてではなく、
-**分散シミュレーションの一部として動作させる** ことを目的としています。
+## 🎯 Target Users
+
+* ロボット / ドローン研究者
+* シミュレーション開発者
+* Godot ユーザーで外部システムと連携したい人
+
+---
+
+## 🧠 Architecture
+
+hakoniwa-godot は 3 つのコア機能で構成されます。
+
+```text
+時間（Time）  ＋  状態（State）  ＋  操作（Control）
+```
+
+これにより、Godot は単なる描画エンジンではなく、**箱庭に接続された 1 つの実行ノード** として動作します。
+
+| コンポーネント | 役割 | 状態 |
+|---|---|---|
+| `hakoniwa-core-pro` | 時刻同期。外部シミュレーションと同じ時間軸で動作する | 🔜 Next |
+| `hakoniwa-pdu-endpoint` | PDU ベースのデータ通信 (`latest` / `queue`) | ✅ Done |
+| `hakoniwa-pdu-rpc` | RPC による外部システムの制御・状態取得 | 🔜 Next |
+
+---
+
+## 📡 Data Handling Modes
+
+Godot のフレームループとの連携指針:
+
+| Godot Loop | 推奨モード | 用途 |
+|---|---|---|
+| `_process()` | `latest` | 可視化・UI 更新 |
+| `_physics_process()` | `queue` | 状態遷移・ログ・制御 |
 
 ---
 
 ## ✅ Current Status
 
-現在の到達点:
+> 現在のマイルストーン: **Godot から箱庭 endpoint として raw binary / Dictionary / typed GDScript object を送受信できるところまで**
+
+達成済み:
 
 * Godot プラグインの最小土台を作成
 * GDExtension のビルドに成功
-* Godot から native extension の読み込みに成功
-* `hakoniwa-pdu-endpoint` へのリンク確認に成功
+* `hakoniwa-pdu-endpoint` へのリンク確認
 * `open / start / stop / is_running` の最小 API を実装
-* `send_by_name / recv_by_name` による `latest` 動作確認に成功
-* `recv_next()` による `queue` 動作確認に成功
-* `set_recv_event / get_pending_count` による pending 管理確認に成功
+* `send_by_name / recv_by_name` による `latest` 動作確認
+* `recv_next()` による `queue` 動作確認
+* `set_recv_event / get_pending_count` による pending 管理確認
+* `HakoniwaCodecRegistry` による codec plugin load に成功
+* `hako_msgs` codec plugin の `encode / decode` smoke test に成功
+* message package ごとの shared library plugin 生成基盤を追加
+* `HakoniwaEndpointNode` による GDScript wrapper を追加
+* `HakoniwaTypedEndpoint` による `robot + pdu_name` 束縛 API を追加
+* `addons/hakoniwa_msgs` 生成導線を追加
+* typed endpoint で単純型、複雑型、可変長配列の動作確認
 
-現在のマイルストーンは、**Godot から箱庭 endpoint としてバイナリデータを送受信できるところまで** です。
+まだ対象外:
 
----
-
-## 🔢 Verified Version
-
-2026-03-22 時点の確認済み環境:
-
-* Godot `4.6.1` on macOS
-* `godot-cpp` submodule: `4.5` branch
-
-注記:
-
-* `godot-cpp` は 2026-03-22 時点で公式 `4.6` branch が存在しなかったため、現時点では `4.5` 系を採用しています
-* 今後 `godot-cpp` 側の対応が揃えば更新します
-
----
-
-## 🎯 What you can do
-
-現時点では、以下ができます。
-
-* 外部シミュレーション用 endpoint を Godot から開く
-* バイナリ payload を `latest` モードで送受信する
-* バイナリ payload を `queue` モードで順次受信する
-* `set_recv_event()` と `get_pending_count()` で pending を管理する
-
-現時点では、以下はまだ対象外です。
-
-* PDU payload の自動 decode
-* Godot 利用者向けの typed wrapper / codec
 * `hakoniwa-core-pro` の時間同期統合
 * `hakoniwa-pdu-rpc` の操作系統合
+* codec plugin / message addon の自動 discovery
 
 ---
 
-## 🧩 Architecture Overview
+## 🔢 Verified Environment
 
-hakoniwa-godot は、以下の3つのコア機能で構成されています。
+2026-03-22 時点:
 
-### ⏱ 1. hakoniwa-core-pro（時間）
+* Godot `4.6.1` (mono) on macOS arm64
+* `godot-cpp` submodule: `4.5` branch
 
-箱庭の時刻同期機構。
-Godot を外部シミュレーションと同じ時間軸で動作させます。
-
----
-
-### 📡 2. hakoniwa-pdu-endpoint（状態）
-
-PDUベースのデータ通信。
-
-* latest（最新値のみ取得）
-* queue（履歴を順次取得）
-
-👉 用途に応じて選択可能
+> 注記: `godot-cpp` の公式 `4.6` branch が 2026-03-22 時点で存在しないため、現時点では `4.5` 系を採用しています。
 
 ---
 
-### ⚙️ 3. hakoniwa-pdu-rpc（操作）
-
-RPC通信により、
-
-* 外部システムの制御
-* 状態取得リクエスト
-
-を行います。
-
----
-
-## 🧠 Concept
+## 📦 Distribution Model
 
 ```text
-時間（Time）
-＋
-状態（State）
-＋
-操作（Control）
+addons/
+├─ hakoniwa/
+│  ├─ bin/          # platform 依存: native binary
+│  ├─ codecs/       # platform 依存: codec plugin
+│  └─ scripts/      # platform 非依存: GDScript wrapper
+└─ hakoniwa_msgs/   # platform 非依存: generated GDScript message classes
 ```
 
-この3つにより、Godotは単なる描画エンジンではなく、
+`addons/hakoniwa` は `OS + architecture` ごとに配布物が分かれます。  
+`addons/hakoniwa_msgs` は platform 非依存の message 定義層として独立して扱います。
 
-> **箱庭に接続された1つの実行ノード**
+このリポジトリでは `addons/` 自体を正本にはせず、source から生成・配布する成果物として扱います。
 
-として動作します。
+**common codecs**:
+
+`builtin_interfaces`, `can_msgs`, `drone_srv_msgs`, `ev3_msgs`, `geometry_msgs`, `hako_mavlink2_msgs`, `hako_mavlink_msgs`, `hako_msgs`, `hako_srv_msgs`, `mavros_msgs`, `nav_msgs`, `sensor_msgs`, `std_msgs`, `tf2_msgs`
 
 ---
 
 ## 🚀 Quick Start
+
+### Prerequisites
+
+* Godot `4.6.1` (mono) on macOS arm64
+* CMake `>= 3.21`
+* submodule 含む clone (`--recursive`)
+
+---
 
 ### 1. Clone
 
@@ -127,126 +128,122 @@ cd hakoniwa-godot
 ### 2. Build Native Extension
 
 ```bash
-cmake -B build
-cmake --build build
+cmake --preset default
+cmake --build --preset default
+```
+
+preset オプション:
+
+```bash
+cmake --preset default        # hako_msgs のみ
+cmake --preset common-codecs  # common codecs
+cmake --preset all-codecs     # 全 package
+```
+
+package を直接指定する場合:
+
+```bash
+cmake -S . -B build -DHAKONIWA_GODOT_CODEC_PACKAGES="hako_msgs;std_msgs;geometry_msgs"
+cmake --build build -j4
+```
+
+補助ツール:
+
+```bash
+bash tools/codec_plugin_tool.sh list
+bash tools/codec_plugin_tool.sh configure --packages "hako_msgs;std_msgs"
+bash tools/codec_plugin_tool.sh build --target hako_msgs_codec
+bash tools/codec_plugin_tool.sh test
+bash tools/message_addon_tool.sh sync --packages all
+```
+
+macOS addon artifact を作る場合:
+
+```bash
+bash tools/addon_artifact_tool.sh stage   --platform macos --arch arm64 --packages all
+bash tools/addon_artifact_tool.sh archive --platform macos --arch arm64 --packages all
+```
+
+出力先:
+
+```text
+dist/hakoniwa-godot-macos-arm64/
+dist/hakoniwa-godot-macos-arm64.tar.gz
 ```
 
 ---
 
-### 3. Run Godot
+### 3. Run Example
 
 ```bash
+# macOS arm64 環境での実行例
 /Applications/Godot_mono.app/Contents/MacOS/Godot --path examples/basic_subscriber
 ```
 
 ---
 
-### 4. Observe
-
-* GDExtension が読み込まれる
-* `HakoniwaPduEndpoint` クラスが利用可能になる
-* native 側から `hakoniwa-pdu-endpoint` に到達できる
-* `latest` / `queue` の両方がバイナリ payload ベースで確認できる
-
-### 5. Verification
-
-実行手順:
+### 4. Verify
 
 ```bash
-cmake -S . -B build
-cmake --build build -j4
+cmake --preset default
+cmake --build --preset default
+bash tools/message_addon_tool.sh sync --packages all
 /Applications/Godot_mono.app/Contents/MacOS/Godot --headless --path examples/basic_subscriber --quit
+ctest --preset default
 ```
 
-2026-03-22 時点の実際の確認結果:
+期待される出力:
 
 ```text
 Godot Engine v4.6.1.stable.mono.official.14d19694e - https://godotengine.org
 
 hakoniwa-pdu-endpoint
 true
-0
-0
-0
-{ "robot": "drone0", "channel_id": 0, "pdu_name": "sample_state", "timestamp_ns": 0, "payload": [1, 2, 3, 4, 5, 6, 7, 8] }
 true
 0
-0
-0
-0
-0
+{ "robot": "drone0", "channel_id": 0, "pdu_name": "sample_state", "timestamp_ns": 0, "value": { "data": 72623859790382856 } }
 3
-{ "robot": "drone0", "channel_id": 0, "pdu_name": "sample_state", "timestamp_ns": 0, "payload": [10] }
+{ "robot": "drone0", "channel_id": 0, "pdu_name": "sample_state", "timestamp_ns": 0, "value": { "data": 10 } }
 2
-{ "robot": "drone0", "channel_id": 0, "pdu_name": "sample_state", "timestamp_ns": 0, "payload": [11] }
+{ "robot": "drone0", "channel_id": 0, "pdu_name": "sample_state", "timestamp_ns": 0, "value": { "data": 11 } }
 1
-{ "robot": "drone0", "channel_id": 0, "pdu_name": "sample_state", "timestamp_ns": 0, "payload": [12] }
+{ "robot": "drone0", "channel_id": 0, "pdu_name": "sample_state", "timestamp_ns": 0, "value": { "data": 12 } }
 0
 {  }
+{ "robot": "drone0", "channel_id": 1, "pdu_name": "sample_pose", "timestamp_ns": 0, "value": { "position": { "x": 1.25, "y": 2.5, "z": 3.75 }, "orientation": { "x": 0.0, "y": 0.5, "z": 0.0, "w": 1.0 } }, "typed_value": <RefCounted...> }
+{ "robot": "drone0", "channel_id": 2, "pdu_name": "sample_multi", "timestamp_ns": 0, "value": { "layout": { "dim": [{ "label": "rows", "size": 2, "stride": 6 }, { "label": "cols", "size": 3, "stride": 3 }], "data_offset": 0 }, "data": [100, 101, 102, 200, 201, 202] }, "typed_value": <RefCounted...> }
+HAKONIWA_CODEC_SMOKE_OK
 ```
 
-この結果は、以下を意味します。
+確認内容:
 
-* Godot プロジェクトが起動できた
-* GDExtension がロードされた
-* `HakoniwaPduEndpoint` クラスが登録された
-* native 側から `hakoniwa-pdu-endpoint` の C API 呼び出しに成功した
-* `latest` モードで send / recv が成立した
-* `queue` モードで `recv_next()` が到着順に成立した
-* `queue` モードで pending count が `3 -> 2 -> 1 -> 0` と減ることを確認した
+* GDExtension のロードと `HakoniwaPduEndpoint` クラスの登録
+* `hakoniwa-pdu-endpoint` C API 呼び出しの成立
+* `latest` モードで `std_msgs/UInt64` の typed decode
+* `queue` モードで `recv_next()` と pending count `3 → 2 → 1 → 0`
+* `hako_msgs_codec`, `std_msgs_codec`, `geometry_msgs_codec` のロード
+* `geometry_msgs/Pose`, `std_msgs/UInt64MultiArray` の typed endpoint
 
-## 📌 Scope Boundary
-
-この README 時点で保証しているのは、`PackedByteArray` ベースのバイナリ転送までです。
-
-つまり、Godot 利用者は現時点では `payload` を自分で解釈する必要があります。
-
-将来の拡張対象:
-
-* PDU definition に基づく decode
-* `int` / `float` / `Dictionary` などへの変換 helper
-* typed wrapper / codec 層
-
----
-
-## 🔁 Data Handling Modes
-
-### Latest Mode
+codec smoke test:
 
 ```text
-最新の状態のみ取得
+1/1 Test #1: hakoniwa_codec_smoke .............   Passed
+100% tests passed, 0 tests failed out of 1
 ```
 
-* 可視化
-* UI更新
-* 軽量処理
+---
+
+## ⏭ Next Steps
+
+* `hakoniwa-core-pro` を組み込み、Godot 側の時間同期モデルを定義する
+* `hakoniwa-pdu-rpc` を組み込み、操作系 API を追加する
+* codec plugin / message addon の auto-discovery を検討する
+* `addons/hakoniwa_msgs` の正式配布導線を整える
+* CI で addon artifact を自動生成する
 
 ---
 
-### Queue Mode
-
-```text
-全イベントを順次処理
-```
-
-* 状態遷移
-* ログ処理
-* 制御
-
----
-
-## 🧠 Godot Integration Model
-
-Godotのフレームループと連携します。
-
-| Godot Loop           | 推奨モード  |
-| -------------------- | ------ |
-| `_process()`         | latest |
-| `_physics_process()` | queue  |
-
----
-
-## 📦 Repository Structure
+## 📂 Repository Structure
 
 ```text
 hakoniwa-godot/
@@ -261,38 +258,10 @@ hakoniwa-godot/
 
 ---
 
-## 🎮 Example
+## 🔗 Dependencies / Related Projects
 
-* Godot上でドローンの状態を表示
-* 外部制御プログラムと連携
-* 分散シミュレーションの可視化
+コアコンポーネント:
 
----
-
-## 🧭 Target Users
-
-* ロボット / ドローン研究者
-* シミュレーション開発者
-* Godotユーザーで外部連携したい人
-
----
-
-## 💡 Why hakoniwa?
-
-> **シミュレータはある。でも、つながらない。**
-
-hakoniwa はその問題を解決します。
-
----
-
-## 🔗 Related Projects
-
-* [hakoniwa-core-pro](https://github.com/hakoniwalab/hakoniwa-core-pro)
-* [hakoniwa-pdu-endpoint](https://github.com/hakoniwalab/hakoniwa-pdu-endpoint)
-* [hakoniwa-pdu-rpc](https://github.com/hakoniwalab/hakoniwa-pdu-rpc)
-
----
-
-## ✨ Summary
-
-> **hakoniwa-godot = Godotを箱庭に接続する最小構成**
+* [hakoniwa-pdu-endpoint](https://github.com/hakoniwalab/hakoniwa-pdu-endpoint) - PDU 通信ライブラリ
+* [hakoniwa-core-pro](https://github.com/hakoniwalab/hakoniwa-core-pro) - 時刻同期エンジン
+* [hakoniwa-pdu-rpc](https://github.com/hakoniwalab/hakoniwa-pdu-rpc) - RPC 通信

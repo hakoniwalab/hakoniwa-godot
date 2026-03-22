@@ -75,22 +75,26 @@ probe_native_backend() -> bool
 
 ## 今回の区切り
 
-今回のマイルストーンでは、`payload` は `PackedByteArray` のまま扱う。
+今回のマイルストーンでは、基盤 API としては `payload` を `PackedByteArray` のまま扱う。
 
-つまり、この段階で保証するのは以下まで。
+その上で、codec plugin と generated GDScript message class を組み合わせることで、Godot 利用者には `Dictionary` と typed object まで提供する。
+
+この段階で保証するのは以下まで。
 
 - Godot から endpoint を開ける
 - バイナリ payload を送れる
 - バイナリ payload を受け取れる
 - `latest` / `queue` の意味の違いを Godot から使える
+- `Dictionary` に decode できる
+- `HakoniwaTypedEndpoint` で typed object を送受信できる
 
 ## 今回の対象外
 
 以下は次の段階の課題として扱う。
 
-- `PackedByteArray` を `int`, `float`, `Dictionary` などへ decode する層
-- PDU definition に基づく自動 decode
-- 利用者向け typed wrapper / codec API
+- codec plugin / message addon の自動 discovery
+- `hakoniwa-core-pro` の時間同期統合
+- `hakoniwa-pdu-rpc` の操作系統合
 
 ## モード設計
 
@@ -126,6 +130,15 @@ callback は補助機能として扱い、scene tree 更新の主経路にはし
 - 接続失敗は戻り値または `get_last_error()` 相当で参照できるようにする
 - データ未到着は例外ではなく空結果で表現する
 - 無効な設定値は起動前に検出する
+
+## 可変長データの扱い
+
+固定長型と可変長型では `pdu_size` の考え方が異なる。
+
+- `std_msgs/UInt64` や `geometry_msgs/Pose` のような固定長型は、`hakoniwa-pdu-registry` の型サイズ情報を基準にし、基本は `型サイズ + 24 bytes` で考える
+- `std_msgs/UInt64MultiArray` のような可変長型は、ヒープ領域に実データを展開するため、`pdu_size` に余裕が必要になる
+
+そのため、可変長型の example では `registry の型サイズ + 24 bytes` を出発点にしつつ、さらにヒープ領域ぶんを加えた十分大きい `pdu_size` を設定して動作確認する。
 
 ## 未決定事項
 

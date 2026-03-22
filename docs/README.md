@@ -11,5 +11,6 @@
 - `api_overview.md`: API の入口と考え方
 - `api_reference.md`: API 仕様
 - `api_sequences.md`: API の利用順序
+- `codec_plugin_design.md`: message codec plugin の設計方針
 
 README には概要と導入手順を置き、設計判断や詳細仕様は `docs/` 側に寄せます。

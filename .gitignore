@@ -1,4 +1,12 @@
 build/
+build-all-codecs/
+build-common-codecs/
+dist/
 .DS_Store
 .godot/
 addons/hakoniwa/bin/
+addons/hakoniwa/codecs/*.dylib
+addons/hakoniwa/codecs/*.so
+addons/hakoniwa/codecs/*.dll
+addons/hakoniwa/codecs/*.gdextension
+addons/hakoniwa_msgs/

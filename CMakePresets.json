@@ -1,0 +1,72 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 16,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "default",
+      "displayName": "Default",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "HAKONIWA_GODOT_BUILD_TESTS": "ON",
+        "HAKONIWA_GODOT_CODEC_PACKAGES": "hako_msgs"
+      }
+    },
+    {
+      "name": "all-codecs",
+      "displayName": "All Codecs",
+      "inherits": "default",
+      "binaryDir": "${sourceDir}/build-all-codecs",
+      "cacheVariables": {
+        "HAKONIWA_GODOT_CODEC_PACKAGES": "all"
+      }
+    },
+    {
+      "name": "common-codecs",
+      "displayName": "Common Codecs",
+      "inherits": "default",
+      "binaryDir": "${sourceDir}/build-common-codecs",
+      "cacheVariables": {
+        "HAKONIWA_GODOT_CODEC_PACKAGES": "hako_msgs;std_msgs;geometry_msgs;sensor_msgs"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "default",
+      "configurePreset": "default",
+      "jobs": 4
+    },
+    {
+      "name": "all-codecs",
+      "configurePreset": "all-codecs",
+      "jobs": 4
+    },
+    {
+      "name": "common-codecs",
+      "configurePreset": "common-codecs",
+      "jobs": 4
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "default",
+      "configurePreset": "default",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "common-codecs",
+      "configurePreset": "common-codecs",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

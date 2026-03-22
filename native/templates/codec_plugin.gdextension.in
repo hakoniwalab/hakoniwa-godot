@@ -1,0 +1,13 @@
+[configuration]
+
+entry_symbol = "@CODEC_INIT_SYMBOL@"
+compatibility_minimum = "4.5"
+
+[libraries]
+
+macos.debug = "res://addons/hakoniwa/codecs/@CODEC_LIBRARY_NAME@.dylib"
+macos.release = "res://addons/hakoniwa/codecs/@CODEC_LIBRARY_NAME@.dylib"
+windows.debug.x86_64 = "res://addons/hakoniwa/codecs/@CODEC_LIBRARY_NAME@.dll"
+windows.release.x86_64 = "res://addons/hakoniwa/codecs/@CODEC_LIBRARY_NAME@.dll"
+linux.debug.x86_64 = "res://addons/hakoniwa/codecs/@CODEC_LIBRARY_NAME@.so"
+linux.release.x86_64 = "res://addons/hakoniwa/codecs/@CODEC_LIBRARY_NAME@.so"

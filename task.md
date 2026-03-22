@@ -31,12 +31,38 @@
 ### M4. 利用者向け整備
 
 - [x] 最小サンプルシーンを作る
-- [ ] 導入手順を README に反映する
-- [ ] `docs/` に設計と利用手順を残す
-- [ ] 最低限の検証手順を文書化する
+- [x] 導入手順を README に反映する
+- [x] `docs/` に設計と利用手順を残す
+- [x] 最低限の検証手順を文書化する
 - [x] API 全体像を整理する
 - [x] API リファレンスを整備する
 - [x] API 利用シーケンスを整理する
+
+### M5. codec plugin 基盤
+
+- [x] `HakoniwaCodecRegistry` を追加する
+- [x] codec plugin ABI と loader の骨格を追加する
+- [x] `hako_msgs` codec plugin の smoke test を通す
+- [x] package ごとの shared library plugin 生成基盤を追加する
+- [x] package ごとの typed GDScript message 配布方針を固める
+
+### M6. GDScript message / typed endpoint
+
+- [x] `addons/hakoniwa_msgs` 生成導線を追加する
+- [x] `HakoniwaEndpointNode` を追加する
+- [x] `HakoniwaTypedEndpoint` を追加する
+- [x] `get_typed_endpoint(robot, pdu_name)` を追加する
+- [x] 単純型の typed endpoint 動作確認を行う
+- [x] 複雑型の typed endpoint 動作確認を行う
+- [x] 可変長配列の typed endpoint 動作確認を行う
+
+### M7. 時間同期 / 操作系
+
+- [ ] `hakoniwa-core-pro` の時間同期モデルを設計する
+- [ ] Godot 側の時間制御 API を定義する
+- [ ] 最小の時間同期 sample を通す
+- [ ] `hakoniwa-pdu-rpc` の操作系 API を設計する
+- [ ] 最小の RPC sample を通す
 
 ## 直近タスク
 
@@ -60,13 +86,21 @@
 - [x] `recv_next()` ベースの利用例を example で確認する
 - [x] `set_recv_event()` の利用パスを example で確認する
 - [x] `send_by_name()` を API ドキュメントへ正式反映する
-- [ ] Godot 側の typed wrapper を用意するか判断する
+- [x] Godot 側の typed wrapper を用意するか判断する
+- [x] package ごとの typed GDScript を addons へどう配布するか決める
+- [x] `message_addon_tool.sh` を追加する
+- [x] `example` を wrapper / typed endpoint ベースへ更新する
+- [x] 可変長配列の `pdu_size` 注意点を整理する
+- [ ] codec plugin auto-discovery を入れるか判断する
+- [ ] `hakoniwa-core-pro` 統合の docs を起こす
+- [ ] `hakoniwa-pdu-rpc` 統合の docs を起こす
 
 ### 3. 実装開始条件の明確化
 
 - [x] 対応 Godot バージョンを決める
 - [x] 対応 OS を決める
 - [x] 依存ライブラリの取り込み方を決める
+- [x] codec plugin の shared library 方針を決める
 
 ## 進め方
 
@@ -83,7 +117,7 @@
 以下を満たしたら、最初の目標は達成です。
 
 - 第三者が clone してビルドできる
-- Godot 上で PDU を受信して表示できる
+- Godot 上で PDU を raw / decoded / typed object として受信できる
 - `latest` / `queue` の使い分けが分かる
 - README と docs で導入判断ができる
 - API の入口、仕様、利用順序が docs で追える

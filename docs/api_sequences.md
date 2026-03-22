@@ -18,11 +18,14 @@
 ### 起動
 
 ```text
-create Node
+create CodecRegistry Node
+  -> load plugin(s)
+create Endpoint Node
   -> open(config)
   -> start
   -> process_recv_events
   -> recv / recv_next
+  -> decode if needed
   -> stop
   -> close
 ```
@@ -76,14 +79,32 @@ EndpointB.open(config_shm)
   -> EndpointB.close
 ```
 
+### codec plugin 利用
+
+```text
+CodecRegistry.load_plugin(hako_msgs_codec)
+  -> Endpoint.open(config)
+  -> Endpoint.start
+  -> frame loop で recv
+  -> CodecRegistry.decode(package, message, payload)
+  -> アプリ側で Dictionary を利用
+```
+
 ## Node ライフサイクルの最小例
 
 ```gdscript
 extends Node
 
 var endpoint: HakoniwaPduEndpoint
+var codecs: HakoniwaCodecRegistry
 
 func _ready() -> void:
+	codecs = HakoniwaCodecRegistry.new()
+	add_child(codecs)
+	codecs.plugin_paths = PackedStringArray([
+		"res://addons/hakoniwa/codecs/hako_msgs_codec",
+	])
+
 	endpoint = HakoniwaPduEndpoint.new()
 	add_child(endpoint)
 	endpoint.open("res://config/endpoint_ws.json")
@@ -95,6 +116,53 @@ func _process(delta: float) -> void:
 func _exit_tree() -> void:
 	endpoint.stop()
 	endpoint.close()
+```
+
+## wrapper 利用の最小例
+
+```gdscript
+const HakoniwaEndpointNode = preload("res://addons/hakoniwa/scripts/hakoniwa_pdu_endpoint.gd")
+
+var endpoint: HakoniwaEndpointNode
+
+func _ready() -> void:
+	endpoint = HakoniwaEndpointNode.new()
+	add_child(endpoint)
+	endpoint.config_path = "res://config/endpoint_latest.json"
+	endpoint.codec_plugins = PackedStringArray([
+		"res://addons/hakoniwa/codecs/std_msgs_codec",
+	])
+	endpoint.load_configured_codecs()
+	endpoint.open_endpoint()
+	endpoint.start_endpoint()
+
+func _process(delta: float) -> void:
+	endpoint.process_recv_events()
+	var record = endpoint.recv_message("drone0", "sample_state", "std_msgs", "UInt64")
+	if not record.is_empty():
+		print(record["value"]["data"])
+
+func _exit_tree() -> void:
+	endpoint.stop_endpoint()
+	endpoint.close_endpoint()
+```
+
+typed object を使う場合:
+
+```gdscript
+const HakoPduStdMsgsUInt64 = preload("res://messages/std_msgs/UInt64.gd")
+
+func send_typed(endpoint: HakoniwaEndpointNode) -> void:
+	var sample_state = endpoint.get_typed_endpoint("drone0", "sample_state")
+	var msg = HakoPduStdMsgsUInt64.new()
+	msg.data = 42
+	sample_state.send(msg)
+
+func recv_typed(endpoint: HakoniwaEndpointNode) -> void:
+	var sample_state = endpoint.get_typed_endpoint("drone0", "sample_state")
+	var msg = sample_state.recv()
+	if msg != null:
+		print(msg.data)
 ```
 
 ## 受信サンプル
@@ -162,6 +230,58 @@ func _process(delta: float) -> void:
 func _exit_tree() -> void:
 	endpoint.stop()
 	endpoint.close()
+```
+
+## decode サンプル
+
+plugin を `_ready()` でロードし、受信後に decode する最小例:
+
+```gdscript
+extends Node
+
+@onready var codecs: HakoniwaCodecRegistry = $HakoniwaCodecRegistry
+@onready var endpoint: HakoniwaPduEndpoint = $HakoniwaPduEndpoint
+
+func _ready() -> void:
+	codecs.plugin_paths = PackedStringArray([
+		"res://addons/hakoniwa/codecs/hako_msgs_codec",
+	])
+	codecs.load_configured_plugins()
+	endpoint.open("res://config/endpoint_latest.json")
+	endpoint.start()
+
+func _process(delta: float) -> void:
+	endpoint.process_recv_events()
+	var record = endpoint.recv_by_name("drone0", "game_controller")
+	if record.is_empty():
+		return
+	var decoded = codecs.decode("hako_msgs", "GameControllerOperation", record["payload"])
+	if not decoded.is_empty():
+		print(decoded)
+
+func _exit_tree() -> void:
+	endpoint.stop()
+	endpoint.close()
+```
+
+## encode サンプル
+
+送信前に `Dictionary` を payload へ encode する最小例:
+
+```gdscript
+extends Node
+
+@onready var codecs: HakoniwaCodecRegistry = $HakoniwaCodecRegistry
+@onready var endpoint: HakoniwaPduEndpoint = $HakoniwaPduEndpoint
+
+func send_game_controller(axis: PackedFloat64Array, button: Array) -> void:
+	var value = {
+		"axis": axis,
+		"button": button,
+	}
+	var payload = codecs.encode("hako_msgs", "GameControllerOperation", value)
+	if not payload.is_empty():
+		endpoint.send_by_name("drone0", "game_controller", payload)
 ```
 
 ## 送信サンプル

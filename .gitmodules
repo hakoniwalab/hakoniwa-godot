@@ -5,3 +5,6 @@
 	path = third_party/godot-cpp
 	url = https://github.com/godotengine/godot-cpp.git
 	branch = 4.5
+[submodule "third_party/hakoniwa-core-pro"]
+	path = third_party/hakoniwa-core-pro
+	url = https://github.com/hakoniwalab/hakoniwa-core-pro.git

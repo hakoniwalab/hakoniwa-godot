@@ -1,0 +1,26 @@
+#define HAKO_GODOT_CODEC_PLUGIN_BUILD
+
+#include "codec/codec_plugin_api.h"
+
+@CODEC_INCLUDE_LINES@
+
+namespace {
+
+@CODEC_FUNCTION_LINES@
+const hako::godot_codec::CodecEntryV1 kEntries[] = {
+@CODEC_ENTRY_LINES@
+};
+
+const hako::godot_codec::CodecPluginV1 kPlugin = {
+    hako::godot_codec::kCodecPluginAbiVersion,
+    "@CODEC_PACKAGE_NAME@",
+    static_cast<uint32_t>(sizeof(kEntries) / sizeof(kEntries[0])),
+    kEntries,
+};
+
+} // namespace
+
+extern "C" HAKO_GODOT_CODEC_PLUGIN_EXPORT const hako::godot_codec::CodecPluginV1 *
+hako_godot_codec_get_plugin_v1(void) {
+  return &kPlugin;
+}
