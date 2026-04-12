@@ -27,7 +27,7 @@ hakoniwa-godot は 3 つのコア機能で構成されます。
 
 | コンポーネント | 役割 | 状態 |
 |---|---|---|
-| `hakoniwa-core-pro` | 時刻同期。外部シミュレーションと同じ時間軸で動作する | 🔜 Next |
+| `hakoniwa-core-pro` | 時刻同期。外部シミュレーションと同じ時間軸で動作する | ✅ Done |
 | `hakoniwa-pdu-endpoint` | PDU ベースのデータ通信 (`latest` / `queue`) | ✅ Done |
 | `hakoniwa-pdu-rpc` | RPC による外部システムの制御・状態取得 | 🔜 Next |
 
@@ -46,7 +46,7 @@ Godot のフレームループとの連携指針:
 
 ## ✅ Current Status
 
-> 現在のマイルストーン: **Godot から箱庭 endpoint として raw binary / Dictionary / typed GDScript object を送受信できるところまで**
+> 現在のマイルストーン: **`HakoniwaSimNode + internal SHM endpoint + Python controller` による 2 asset 時刻同期・typed PDU 通信まで**
 
 達成済み:
 
@@ -64,13 +64,23 @@ Godot のフレームループとの連携指針:
 * `HakoniwaTypedEndpoint` による `robot + pdu_name` 束縛 API を追加
 * `addons/hakoniwa_msgs` 生成導線を追加
 * typed endpoint で単純型、複雑型、可変長配列の動作確認
+* `HakoniwaSimNode` による `hakoniwa-core-pro` polling asset 統合
+* start / stop / reset / restart lifecycle smoke に成功
+* `simtime == world_time` の `core_pro_smoke` に成功
 * `HakoniwaSimNode + internal SHM endpoint + Python controller` の 2 asset smoke に成功
+* `geometry_msgs/Twist` の `motor` / `pos` で typed PDU 相互通信に成功
+* `HakoniwaEndpointNode` に low-level pull API と ROS 風 subscription API を実装
+* internal SHM endpoint では `tick()` 経由で `dispatch_recv_events()` が動作
+* codec `.gdextension` 初期化順を framework 側で吸収
+* addon artifact の staging / archive 導線を整備
+  - macOS / Linux: `tools/addon_artifact_tool.sh`
+  - Windows: `tools/addon_artifact_tool.ps1`
 
 まだ対象外:
 
-* `hakoniwa-core-pro` の時間同期統合
 * `hakoniwa-pdu-rpc` の操作系統合
 * codec plugin / message addon の自動 discovery
+* Windows 実機での build / load 回帰確認
 
 ---
 
@@ -258,11 +268,11 @@ codec smoke test:
 
 ## ⏭ Next Steps
 
-* `hakoniwa-core-pro` を組み込み、Godot 側の時間同期モデルを定義する
 * `hakoniwa-pdu-rpc` を組み込み、操作系 API を追加する
 * codec plugin / message addon の auto-discovery を検討する
 * `addons/hakoniwa_msgs` の正式配布導線を整える
 * CI で addon artifact を自動生成する
+* Windows / Linux の実機回帰確認を追加する
 
 ## Notes
 
