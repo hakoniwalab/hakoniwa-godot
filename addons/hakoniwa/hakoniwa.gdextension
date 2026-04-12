@@ -7,3 +7,7 @@ compatibility_minimum = "4.5"
 
 macos.debug = "res://addons/hakoniwa/bin/libhakoniwa_godot_native.dylib"
 macos.release = "res://addons/hakoniwa/bin/libhakoniwa_godot_native.dylib"
+windows.debug.x86_64 = "res://addons/hakoniwa/bin/hakoniwa_godot_native.dll"
+windows.release.x86_64 = "res://addons/hakoniwa/bin/hakoniwa_godot_native.dll"
+linux.debug.x86_64 = "res://addons/hakoniwa/bin/libhakoniwa_godot_native.so"
+linux.release.x86_64 = "res://addons/hakoniwa/bin/libhakoniwa_godot_native.so"

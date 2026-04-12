@@ -101,6 +101,13 @@ addons/
 
 このリポジトリでは `addons/` 自体を正本にはせず、source から生成・配布する成果物として扱います。
 
+現状の release 状態:
+
+* `macOS arm64` は build / artifact 手順とも確認済み
+* `Linux` は artifact tool が対応している
+* `Windows x86_64` は artifact tool が対応している
+* ただし回帰確認の基準 platform は引き続き `macOS arm64`
+
 **common codecs**:
 
 `builtin_interfaces`, `can_msgs`, `drone_srv_msgs`, `ev3_msgs`, `geometry_msgs`, `hako_mavlink2_msgs`, `hako_mavlink_msgs`, `hako_msgs`, `hako_srv_msgs`, `mavros_msgs`, `nav_msgs`, `sensor_msgs`, `std_msgs`, `tf2_msgs`
@@ -163,6 +170,20 @@ macOS addon artifact を作る場合:
 ```bash
 bash tools/addon_artifact_tool.sh stage   --platform macos --arch arm64 --packages all
 bash tools/addon_artifact_tool.sh archive --platform macos --arch arm64 --packages all
+```
+
+Linux artifact の例:
+
+```bash
+bash tools/addon_artifact_tool.sh stage   --platform linux --arch x86_64 --packages all
+bash tools/addon_artifact_tool.sh archive --platform linux --arch x86_64 --packages all
+```
+
+Windows artifact の例:
+
+```powershell
+pwsh -File tools/addon_artifact_tool.ps1 stage   -Platform windows -Arch x86_64 -Packages all
+pwsh -File tools/addon_artifact_tool.ps1 archive -Platform windows -Arch x86_64 -Packages all
 ```
 
 出力先:
@@ -248,6 +269,10 @@ codec smoke test:
 - 通常利用では `HakoniwaSimNode` または `HakoniwaEndpointNode` を使う
 - codec plugin path は `res://addons/hakoniwa/codecs/<package>_codec` のように拡張子なしを推奨する
 - `HakoniwaCodecRegistry` を直接使うのは low-level 利用とし、codec の `.gdextension` 初期化順を理解している場合に限る
+- `HakoniwaEndpointNode` は low-level pull API と ROS 風 subscription API の両方を持つ
+- high-level subscription API を使う場合、対象 endpoint JSON の entry で `notify_on_recv: true` が必要
+- `addons/hakoniwa_msgs` は platform 非依存なので、Windows でも追加対応は基本不要
+- codec plugin の `.gdextension` は Windows `.dll` entry を持つが、Windows 実機での build / load 確認はまだしていない
 
 詳細:
 

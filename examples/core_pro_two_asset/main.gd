@@ -9,6 +9,7 @@ var _callbacks = null
 var _step_count := 0
 var _completed := false
 var _latest_motor := {}
+var _motor_subscription_id := -1
 
 func _ready() -> void:
 	print("HAKO_TWO_ASSET_BOOT")
@@ -51,6 +52,19 @@ func _ready() -> void:
 		get_tree().quit(2)
 		return
 
+	var endpoint = _sim.get_endpoint()
+	if endpoint == null:
+		print("HAKO_TWO_ASSET_ENDPOINT_ACCESS_FAILED")
+		print(_sim.get_last_error_text())
+		get_tree().quit(2)
+		return
+	_motor_subscription_id = endpoint.create_subscription_typed("Robot", "motor", Callable(self, "_on_motor_message"))
+	if _motor_subscription_id < 0:
+		print("HAKO_TWO_ASSET_SUBSCRIBE_MOTOR_FAILED")
+		print(endpoint.get_last_error_text())
+		get_tree().quit(2)
+		return
+
 	_callbacks = callbacks_script.new(_pos_endpoint)
 	_sim.set_callbacks(_callbacks)
 
@@ -68,11 +82,6 @@ func _physics_process(_delta: float) -> void:
 
 	if not _sim.tick():
 		return
-
-	var motor_dict: Dictionary = _motor_endpoint.recv_dict()
-	if not motor_dict.is_empty():
-		_latest_motor = motor_dict
-		print("HAKO_TWO_ASSET_RECV_MOTOR:%s" % JSON.stringify(motor_dict))
 
 	var next_index := _step_count + 1
 	var pos_dict: Dictionary = {
@@ -119,3 +128,11 @@ func _on_simulation_stopped() -> void:
 
 func _on_simulation_reset() -> void:
 	print("HAKO_TWO_ASSET_RESET_FEEDBACK_OK")
+
+func _on_motor_message(message) -> void:
+	if message == null:
+		return
+	if not message.has_method("to_dict"):
+		return
+	_latest_motor = message.to_dict()
+	print("HAKO_TWO_ASSET_RECV_MOTOR:%s" % JSON.stringify(_latest_motor))

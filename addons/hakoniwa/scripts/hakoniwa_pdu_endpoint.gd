@@ -3,6 +3,10 @@ extends Node
 
 const HakoniwaTypedEndpoint = preload("res://addons/hakoniwa/scripts/hakoniwa_typed_endpoint.gd")
 
+signal raw_message_received(subscription_id, record)
+signal message_received(subscription_id, message, record)
+signal typed_message_received(subscription_id, typed_value, record)
+
 @export var config_path: String = ""
 @export var codec_plugins: PackedStringArray = []
 @export var message_script_roots: PackedStringArray = PackedStringArray([
@@ -20,6 +24,9 @@ var _codecs: Node = null
 var _last_error_text: String = ""
 var _typed_binding_cache: Dictionary = {}
 var _codec_extension_resources: Array = []
+var _subscriptions: Dictionary = {}
+var _registered_recv_keys: Dictionary = {}
+var _next_subscription_id: int = 1
 
 func _ready() -> void:
 	if not _ensure_native_nodes():
@@ -37,7 +44,10 @@ func _ready() -> void:
 
 func _process(_delta: float) -> void:
 	if auto_process_recv_events and _endpoint != null and is_running():
-		process_recv_events()
+		if _subscriptions.is_empty():
+			process_recv_events()
+		else:
+			dispatch_recv_events()
 
 func _exit_tree() -> void:
 	if not auto_close_on_exit:
@@ -108,6 +118,18 @@ func process_recv_events() -> void:
 		return
 	_endpoint.process_recv_events()
 
+func dispatch_recv_events() -> int:
+	if _subscriptions.is_empty():
+		return 0
+	process_recv_events()
+	var dispatched := 0
+	while true:
+		var record: Dictionary = _endpoint.pop_subscribed_record()
+		if record.is_empty():
+			break
+		dispatched += _dispatch_record(record)
+	return dispatched
+
 func is_running() -> bool:
 	if not _ensure_endpoint():
 		return false
@@ -149,6 +171,39 @@ func send_raw(robot: String, pdu_name: String, payload: PackedByteArray) -> int:
 	var result: int = _endpoint.send_by_name(robot, pdu_name, payload)
 	_update_endpoint_error("send_raw")
 	return result
+
+func create_subscription_raw(robot: String, pdu_name: String, callback: Callable = Callable()) -> int:
+	var binding := _resolve_typed_binding(robot, pdu_name)
+	if binding.is_empty():
+		return -1
+	return _create_subscription(binding, "raw", callback)
+
+func create_subscription_message(robot: String,
+		pdu_name: String,
+		package_name: String,
+		message_name: String,
+		callback: Callable = Callable()) -> int:
+	var binding := _resolve_typed_binding(robot, pdu_name)
+	if binding.is_empty():
+		return -1
+	if binding["package_name"] != package_name or binding["message_name"] != message_name:
+		_last_error_text = "create_subscription_message failed: type mismatch for %s/%s" % [robot, pdu_name]
+		return -1
+	return _create_subscription(binding, "message", callback)
+
+func create_subscription_typed(robot: String, pdu_name: String, callback: Callable = Callable()) -> int:
+	var binding := _resolve_typed_binding(robot, pdu_name)
+	if binding.is_empty():
+		return -1
+	return _create_subscription(binding, "typed", callback)
+
+func destroy_subscription(subscription_id: int) -> bool:
+	if not _subscriptions.has(subscription_id):
+		_last_error_text = "destroy_subscription failed: subscription not found"
+		return false
+	_subscriptions.erase(subscription_id)
+	_last_error_text = ""
+	return true
 
 func load_codec_plugin(plugin_path: String) -> bool:
 	if not _ensure_codecs():
@@ -277,6 +332,69 @@ func get_typed_endpoint(robot: String, pdu_name: String) -> Variant:
 		pdu_name,
 		binding["package_name"],
 		binding["message_name"])
+
+func _create_subscription(binding: Dictionary, delivery_kind: String, callback: Callable) -> int:
+	var register_key := "%s::%d" % [binding["robot"], binding["channel_id"]]
+	if not _registered_recv_keys.has(register_key):
+		var register_result: int = _endpoint.subscribe_on_recv_callback_by_name(
+			binding["robot"],
+			binding["pdu_name"])
+		_update_endpoint_error("create_subscription.subscribe_on_recv_callback_by_name")
+		if register_result != 0:
+			return -1
+		_registered_recv_keys[register_key] = true
+	var subscription_id := _next_subscription_id
+	_next_subscription_id += 1
+	var subscription := binding.duplicate()
+	subscription["delivery_kind"] = delivery_kind
+	subscription["callback"] = callback
+	_subscriptions[subscription_id] = subscription
+	_last_error_text = ""
+	return subscription_id
+
+func _dispatch_record(record: Dictionary) -> int:
+	var robot: String = record.get("robot", "")
+	var channel_id: int = record.get("channel_id", -1)
+	var dispatched := 0
+	for subscription_id in _subscriptions.keys():
+		var subscription: Dictionary = _subscriptions[subscription_id]
+		if subscription.get("robot", "") != robot:
+			continue
+		if subscription.get("channel_id", -1) != channel_id:
+			continue
+		var delivery_kind: String = subscription.get("delivery_kind", "raw")
+		var callback: Callable = subscription.get("callback", Callable())
+		if delivery_kind == "typed":
+			var typed_record := decode_typed_record(
+				subscription["package_name"],
+				subscription["message_name"],
+				record)
+			if typed_record.is_empty():
+				continue
+			var typed_value = typed_record.get("typed_value", null)
+			if callback.is_valid():
+				callback.call(typed_value)
+			typed_message_received.emit(subscription_id, typed_value, typed_record)
+			dispatched += 1
+			continue
+		if delivery_kind == "message":
+			var decoded_record := decode_record(
+				subscription["package_name"],
+				subscription["message_name"],
+				record)
+			if decoded_record.is_empty():
+				continue
+			var message: Dictionary = decoded_record.get("value", {})
+			if callback.is_valid():
+				callback.call(message)
+			message_received.emit(subscription_id, message, decoded_record)
+			dispatched += 1
+			continue
+		if callback.is_valid():
+			callback.call(record)
+		raw_message_received.emit(subscription_id, record)
+		dispatched += 1
+	return dispatched
 
 func _ensure_native_nodes() -> bool:
 	return _ensure_endpoint() and _ensure_codecs()
@@ -424,6 +542,9 @@ func _resolve_typed_binding(robot: String, pdu_name: String) -> Dictionary:
 			return {}
 		var parts := type_name.split("/", false, 1)
 		var binding := {
+			"robot": robot,
+			"pdu_name": pdu_name,
+			"channel_id": pdu_entry.get("channel_id", -1),
 			"package_name": parts[0],
 			"message_name": parts[1]
 		}

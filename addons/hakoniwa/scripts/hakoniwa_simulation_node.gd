@@ -187,13 +187,13 @@ func tick() -> bool:
 		return false
 	if pdu_sync_mode:
 		if _internal_endpoint != null and _internal_endpoint.is_running():
-			_internal_endpoint.process_recv_events()
+			_internal_endpoint.dispatch_recv_events()
 		_core_asset.notify_write_pdu_done()
 		_update_error("tick.notify_write_pdu_done")
 		return _last_error_text.is_empty() and false
 
 	if _internal_endpoint != null and _internal_endpoint.is_running():
-		_internal_endpoint.process_recv_events()
+		_internal_endpoint.dispatch_recv_events()
 
 	_core_asset.notify_simtime(_current_simtime_usec)
 	_update_error("tick.notify_simtime")

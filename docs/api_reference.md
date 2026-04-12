@@ -98,9 +98,14 @@
 - `post_start_endpoint() -> int`
 - `stop_endpoint() -> void`
 - `process_recv_events() -> void`
+- `dispatch_recv_events() -> int`
 - `is_running() -> bool`
 - `set_recv_event(robot: String, channel_id: int) -> int`
 - `get_pending_count() -> int`
+- `create_subscription_raw(robot: String, pdu_name: String, callback: Callable = Callable()) -> int`
+- `create_subscription_message(robot: String, pdu_name: String, package_name: String, message_name: String, callback: Callable = Callable()) -> int`
+- `create_subscription_typed(robot: String, pdu_name: String, callback: Callable = Callable()) -> int`
+- `destroy_subscription(subscription_id: int) -> bool`
 - `recv_raw(robot: String, pdu_name: String) -> Dictionary`
 - `recv_next_raw() -> Dictionary`
 - `send_raw(robot: String, pdu_name: String, payload: PackedByteArray) -> int`
@@ -182,6 +187,22 @@
 - `decode_typed_record()` / `recv_typed_message()` / `recv_next_typed_message()` は `typed_value` を追加で返す
 - typed script は `message_script_roots` 配下の `<package>/<message>.gd` から解決する
 - `get_typed_endpoint()` は `config_path` から `pdu_def` を読んで `robot + pdu_name` の型を解決する
+- 受信 API は 2 層に分かれる
+  - low-level pull API:
+    - `process_recv_events()`
+    - `set_recv_event()`
+    - `get_pending_count()`
+    - `recv_next_*()`
+  - high-level subscription API:
+    - `create_subscription_*()`
+    - `destroy_subscription()`
+    - `dispatch_recv_events()`
+- high-level subscription API は native receive callback を内部 queue に積み、`dispatch_recv_events()` で Godot main thread 上へ配送する
+- signal:
+  - `raw_message_received(subscription_id, record)`
+  - `message_received(subscription_id, message, record)`
+  - `typed_message_received(subscription_id, typed_value, record)`
+- high-level subscription API を使う場合、endpoint JSON の対象 entry で `notify_on_recv: true` が必要
 
 ### `HakoniwaTypedEndpoint`
 
@@ -196,7 +217,7 @@
 1. `HakoniwaCodecRegistry` で codec plugin をロードする
 2. `HakoniwaPduEndpoint` を `open()` する
 3. `HakoniwaSimNode` を `initialize()` する
-4. `Start` event 後に `HakoniwaPduEndpoint` を `start()` する
+4. `Start` event 後に `HakoniwaPduEndpoint` を `start()` / `post_start()` する
 
 codec plugin path の推奨形:
 
@@ -216,3 +237,5 @@ codec plugin path の推奨形:
 
 - `HakoniwaSimNode` / `HakoniwaEndpointNode` を使う場合は、codec plugin の GDExtension 初期化順は framework 側が吸収する
 - `HakoniwaCodecRegistry` を直接使う場合は、対応する `<package>_codec.gdextension` のロードを先に済ませること
+- `HakoniwaSimNode` の internal SHM endpoint は `tick()` の中で `dispatch_recv_events()` を呼ぶ
+- WebSocket / TCP / Zenoh / MQTT など独立 `HakoniwaEndpointNode` では、利用者が main loop から `dispatch_recv_events()` または low-level pull API を呼ぶ

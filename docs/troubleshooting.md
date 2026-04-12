@@ -124,6 +124,26 @@ codecs.load_plugin("res://addons/hakoniwa/codecs/geometry_msgs_codec")
 - `core_pro_two_asset` で `motor` / `pos` の typed send / recv が成功
 - `simtime == world_time` の 5 step smoke が通過
 
+## subscription を作ったのに callback が来ない
+
+症状:
+
+- `create_subscription_*()` は成功する
+- callback / signal が一度も発火しない
+- transport 側ログに `No subscribers found ...` が出る
+
+まず確認すること:
+
+1. 対象 endpoint JSON の entry で `notify_on_recv: true` になっているか
+2. `_process()` / `_physics_process()` / `HakoniwaSimNode.tick()` から `dispatch_recv_events()` が呼ばれているか
+
+補足:
+
+- low-level pull API だけを使う場合は、`notify_on_recv` と high-level subscription は不要
+- high-level subscription API は native callback を内部 queue に積み、`dispatch_recv_events()` で Godot main thread 上へ配送する
+- `HakoniwaSimNode` の internal SHM endpoint では `tick()` が `dispatch_recv_events()` を呼ぶ
+- 独立 `HakoniwaEndpointNode` では、利用者が `dispatch_recv_events()` を呼ぶ必要がある
+
 ## 疑うべきログ
 
 以下のような stack が見えたら、この問題を疑う。

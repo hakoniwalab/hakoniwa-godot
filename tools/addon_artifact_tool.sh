@@ -22,13 +22,14 @@ Commands:
     addons/hakoniwa_msgs for the selected platform.
 
   archive
-    Create the staging directory and then archive it as .tar.gz.
+    Create the staging directory and then archive it.
+    macOS / Linux use .tar.gz, Windows uses .zip.
 
   paths
     Print the expected staging and archive paths.
 
 Required:
-  --platform PLATFORM   One of: macos, linux
+  --platform PLATFORM   One of: macos, linux, windows
   --arch ARCH           For example: arm64, x86_64
 
 Options:
@@ -41,6 +42,7 @@ Options:
 Examples:
   bash tools/addon_artifact_tool.sh stage --platform macos --arch arm64 --packages all
   bash tools/addon_artifact_tool.sh archive --platform linux --arch x86_64 --packages "hako_msgs;std_msgs"
+  bash tools/addon_artifact_tool.sh archive --platform windows --arch x86_64 --packages all
 EOF
 }
 
@@ -57,6 +59,30 @@ resolve_library_extension() {
   case "$1" in
     macos) echo ".dylib" ;;
     linux) echo ".so" ;;
+    windows) echo ".dll" ;;
+    *)
+      echo "unsupported platform: $1" >&2
+      exit 1
+      ;;
+  esac
+}
+
+resolve_runtime_library_name() {
+  case "$1" in
+    macos) echo "libhakoniwa_godot_native.dylib" ;;
+    linux) echo "libhakoniwa_godot_native.so" ;;
+    windows) echo "hakoniwa_godot_native.dll" ;;
+    *)
+      echo "unsupported platform: $1" >&2
+      exit 1
+      ;;
+  esac
+}
+
+resolve_archive_suffix() {
+  case "$1" in
+    windows) echo ".zip" ;;
+    macos|linux) echo ".tar.gz" ;;
     *)
       echo "unsupported platform: $1" >&2
       exit 1
@@ -122,6 +148,47 @@ copy_runtime_addon() {
   fi
 }
 
+patch_runtime_gdextension() {
+  local gdextension_path="$1"
+  local platform="$2"
+  local arch="$3"
+  local runtime_library_name="$4"
+
+  if [[ ! -f "${gdextension_path}" ]]; then
+    echo "runtime gdextension not found: ${gdextension_path}" >&2
+    exit 1
+  fi
+
+  local platform_key
+  case "${platform}" in
+    macos)
+      platform_key="macos"
+      ;;
+    linux)
+      platform_key="linux.${arch}"
+      ;;
+    windows)
+      platform_key="windows.${arch}"
+      ;;
+    *)
+      echo "unsupported platform: ${platform}" >&2
+      exit 1
+      ;;
+  esac
+
+  cat > "${gdextension_path}" <<EOF
+[configuration]
+
+entry_symbol = "hakoniwa_library_init"
+compatibility_minimum = "4.5"
+
+[libraries]
+
+${platform_key}.debug = "res://addons/hakoniwa/bin/${runtime_library_name}"
+${platform_key}.release = "res://addons/hakoniwa/bin/${runtime_library_name}"
+EOF
+}
+
 copy_message_addon_if_present() {
   local msgs_dir="$1"
   local target_root="$2"
@@ -167,6 +234,8 @@ stage_cmd() {
   packages="$(normalize_packages "${packages}")"
   local ext
   ext="$(resolve_library_extension "${platform}")"
+  local runtime_library_name
+  runtime_library_name="$(resolve_runtime_library_name "${platform}")"
   local base_name
   base_name="$(resolve_artifact_name "${platform}" "${arch}" "${artifact_name}")"
   local stage_dir="${dist_dir}/${base_name}"
@@ -175,6 +244,7 @@ stage_cmd() {
   mkdir -p "${stage_dir}"
 
   copy_runtime_addon "${runtime_dir}" "${stage_dir}" "${ext}" "${packages}"
+  patch_runtime_gdextension "${stage_dir}/addons/hakoniwa/hakoniwa.gdextension" "${platform}" "${arch}" "${runtime_library_name}"
   copy_message_addon_if_present "${msgs_dir}" "${stage_dir}"
 
   echo "${stage_dir}"
@@ -208,8 +278,17 @@ archive_cmd() {
 
   local stage_dir
   stage_dir="$(stage_cmd --platform "${platform}" --arch "${arch}" --dist-dir "${dist_dir}" --runtime-dir "${runtime_dir}" --msgs-dir "${msgs_dir}" --packages "${packages}" --artifact-name "${artifact_name}")"
-  local archive_path="${stage_dir}.tar.gz"
-  tar -C "${dist_dir}" -czf "${archive_path}" "$(basename "${stage_dir}")"
+  local archive_suffix
+  archive_suffix="$(resolve_archive_suffix "${platform}")"
+  local archive_path="${stage_dir}${archive_suffix}"
+  if [[ "${platform}" == "windows" ]]; then
+    (
+      cd "${dist_dir}"
+      zip -qr "${archive_path}" "$(basename "${stage_dir}")"
+    )
+  else
+    tar -C "${dist_dir}" -czf "${archive_path}" "$(basename "${stage_dir}")"
+  fi
   echo "${archive_path}"
 }
 
@@ -241,8 +320,10 @@ paths_cmd() {
 
   local base_name
   base_name="$(resolve_artifact_name "${platform}" "${arch}" "${artifact_name}")"
+  local archive_suffix
+  archive_suffix="$(resolve_archive_suffix "${platform}")"
   echo "stage: ${dist_dir}/${base_name}"
-  echo "archive: ${dist_dir}/${base_name}.tar.gz"
+  echo "archive: ${dist_dir}/${base_name}${archive_suffix}"
 }
 
 main() {

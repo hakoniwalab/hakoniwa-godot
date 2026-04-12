@@ -198,6 +198,7 @@ SHM endpoint を使う場合の追加必須事項:
 - `notify_simtime()` の実行
 - event と simulation state の内部管理
 - 内部 SHM endpoint の open / start / stop / close
+- 内部 SHM endpoint の `dispatch_recv_events()`
 - codec plugin の shared library 解決
 - codec plugin に対応する `.gdextension` の初期化
 
@@ -243,9 +244,11 @@ button pressed
 tick
   -> poll_event()
   -> Start event
+  -> use_internal_shm_endpoint == true なら SHM endpoint start
+  -> use_internal_shm_endpoint == true なら SHM endpoint post_start
   -> callbacks.on_simulation_start()
       -> SHM endpoint を使う場合は初期値 PDU を書く
-  -> use_internal_shm_endpoint == true なら SHM endpoint start
+  -> notify_write_pdu_done()
   -> start_feedback_ok()
   -> return false
 ```
@@ -277,6 +280,7 @@ _physics_process
       -> poll_event()
       -> if event handled: return false
       -> if not running: return false
+      -> use_internal_shm_endpoint == true なら dispatch_recv_events()
       -> world_time と next_asset_time を比較
       -> if まだ進めない: return false
       -> return true
@@ -344,6 +348,17 @@ tick
 
 - `asset_name` と SHM endpoint の整合は `SimNode` が内部管理できる
 - 他 transport の独立性は壊さない
+
+独立 `HakoniwaEndpointNode` 側の受信は、利用者が明示的に main loop から進める。
+
+- low-level pull API:
+  - `process_recv_events()`
+  - `recv_next_*()`
+- high-level subscription API:
+  - `create_subscription_*()`
+  - `dispatch_recv_events()`
+
+high-level subscription API を使う場合でも、native callback が直接 Godot ノードを触るわけではない。native callback は内部 queue に積み、`dispatch_recv_events()` が Godot main thread 上で callback / signal を配送する。
 
 ## 最初のテスト方法
 

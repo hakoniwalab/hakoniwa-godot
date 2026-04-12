@@ -4,6 +4,9 @@
 #include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/variant/packed_byte_array.hpp>
 
+#include <deque>
+#include <mutex>
+
 extern "C" {
 #include <hakoniwa/pdu/c_endpoint.h>
 }
@@ -38,6 +41,8 @@ public:
   int get_pending_count() const;
   int set_recv_event(const String &robot, int channel_id);
   int get_pdu_channel_id_by_name(const String &robot, const String &pdu_name) const;
+  int subscribe_on_recv_callback_by_name(const String &robot, const String &pdu_name);
+  Dictionary pop_subscribed_record();
   Dictionary recv_by_name(const String &robot, const String &pdu_name);
   Dictionary recv_next();
   int send_by_name(const String &robot, const String &pdu_name, const PackedByteArray &payload);
@@ -51,11 +56,19 @@ private:
   bool ensure_handle();
   void destroy_handle();
   void set_last_error(int error) const;
+  static void on_recv_thunk(void *user_data,
+                            const hako_pdu_resolved_key_t *key,
+                            const void *data,
+                            size_t size);
+  void on_recv(const hako_pdu_resolved_key_t *key, const void *data, size_t size);
   static Dictionary make_record_dict(const String &robot,
                                      int channel_id,
                                      const String &pdu_name,
                                      uint64_t timestamp_ns,
                                      const PackedByteArray &payload);
+
+  mutable std::mutex subscribed_records_mutex_;
+  std::deque<Dictionary> subscribed_records_;
 };
 
 } // namespace godot

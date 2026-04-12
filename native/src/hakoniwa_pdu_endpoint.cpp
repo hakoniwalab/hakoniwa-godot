@@ -6,6 +6,7 @@
 
 #include <array>
 #include <cstring>
+#include <mutex>
 #include <vector>
 
 extern "C" {
@@ -87,6 +88,9 @@ void HakoniwaPduEndpoint::_bind_methods() {
   ClassDB::bind_method(D_METHOD("set_recv_event", "robot", "channel_id"), &HakoniwaPduEndpoint::set_recv_event);
   ClassDB::bind_method(D_METHOD("get_pdu_channel_id_by_name", "robot", "pdu_name"),
                        &HakoniwaPduEndpoint::get_pdu_channel_id_by_name);
+  ClassDB::bind_method(D_METHOD("subscribe_on_recv_callback_by_name", "robot", "pdu_name"),
+                       &HakoniwaPduEndpoint::subscribe_on_recv_callback_by_name);
+  ClassDB::bind_method(D_METHOD("pop_subscribed_record"), &HakoniwaPduEndpoint::pop_subscribed_record);
   ClassDB::bind_method(D_METHOD("recv_by_name", "robot", "pdu_name"), &HakoniwaPduEndpoint::recv_by_name);
   ClassDB::bind_method(D_METHOD("recv_next"), &HakoniwaPduEndpoint::recv_next);
   ClassDB::bind_method(D_METHOD("send_by_name", "robot", "pdu_name", "payload"), &HakoniwaPduEndpoint::send_by_name);
@@ -258,6 +262,31 @@ int HakoniwaPduEndpoint::get_pdu_channel_id_by_name(const String &robot, const S
   return channel_id;
 }
 
+int HakoniwaPduEndpoint::subscribe_on_recv_callback_by_name(const String &robot, const String &pdu_name) {
+  if (handle_ == nullptr) {
+    set_last_error(HAKO_PDU_ERR_INVALID_ARGUMENT);
+    return last_error_;
+  }
+  hako_pdu_key_t key{};
+  if (!make_name_key(robot, pdu_name, key)) {
+    set_last_error(HAKO_PDU_ERR_INVALID_ARGUMENT);
+    return last_error_;
+  }
+  set_last_error(hako_pdu_endpoint_subscribe_on_recv_callback_by_name(
+      handle_, &key, &HakoniwaPduEndpoint::on_recv_thunk, this));
+  return last_error_;
+}
+
+Dictionary HakoniwaPduEndpoint::pop_subscribed_record() {
+  std::lock_guard<std::mutex> lock(subscribed_records_mutex_);
+  if (subscribed_records_.empty()) {
+    return {};
+  }
+  Dictionary record = subscribed_records_.front();
+  subscribed_records_.pop_front();
+  return record;
+}
+
 Dictionary HakoniwaPduEndpoint::recv_by_name(const String &robot, const String &pdu_name) {
   Dictionary result;
   if (handle_ == nullptr) {
@@ -339,6 +368,35 @@ int HakoniwaPduEndpoint::send_by_name(const String &robot,
   const void *data = payload.is_empty() ? nullptr : payload.ptr();
   set_last_error(hako_pdu_endpoint_send_by_name(handle_, &key, data, payload.size()));
   return last_error_;
+}
+
+void HakoniwaPduEndpoint::on_recv_thunk(void *user_data,
+                                        const hako_pdu_resolved_key_t *key,
+                                        const void *data,
+                                        size_t size) {
+  if (user_data == nullptr) {
+    return;
+  }
+  static_cast<HakoniwaPduEndpoint *>(user_data)->on_recv(key, data, size);
+}
+
+void HakoniwaPduEndpoint::on_recv(const hako_pdu_resolved_key_t *key, const void *data, size_t size) {
+  if (handle_ == nullptr || key == nullptr) {
+    return;
+  }
+  char pdu_name[kPduNameMax] = {};
+  String pdu_name_string;
+  const int name_err = hako_pdu_endpoint_get_pdu_name(handle_, key, pdu_name, sizeof(pdu_name));
+  if (name_err == HAKO_PDU_ERR_OK) {
+    pdu_name_string = String(pdu_name);
+  }
+  Dictionary record = make_record_dict(String(key->robot),
+                                       static_cast<int>(key->channel_id),
+                                       pdu_name_string,
+                                       0,
+                                       copy_payload(data, size));
+  std::lock_guard<std::mutex> lock(subscribed_records_mutex_);
+  subscribed_records_.push_back(record);
 }
 
 bool HakoniwaPduEndpoint::ensure_handle() {
