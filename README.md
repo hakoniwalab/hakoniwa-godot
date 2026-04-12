@@ -64,6 +64,7 @@ Godot のフレームループとの連携指針:
 * `HakoniwaTypedEndpoint` による `robot + pdu_name` 束縛 API を追加
 * `addons/hakoniwa_msgs` 生成導線を追加
 * typed endpoint で単純型、複雑型、可変長配列の動作確認
+* `HakoniwaSimNode + internal SHM endpoint + Python controller` の 2 asset smoke に成功
 
 まだ対象外:
 
@@ -223,6 +224,7 @@ HAKONIWA_CODEC_SMOKE_OK
 * `queue` モードで `recv_next()` と pending count `3 → 2 → 1 → 0`
 * `hako_msgs_codec`, `std_msgs_codec`, `geometry_msgs_codec` のロード
 * `geometry_msgs/Pose`, `std_msgs/UInt64MultiArray` の typed endpoint
+* `geometry_msgs/Twist` による `motor` / `pos` の endpoint-only typed send / recv
 
 codec smoke test:
 
@@ -240,6 +242,18 @@ codec smoke test:
 * codec plugin / message addon の auto-discovery を検討する
 * `addons/hakoniwa_msgs` の正式配布導線を整える
 * CI で addon artifact を自動生成する
+
+## Notes
+
+- 通常利用では `HakoniwaSimNode` または `HakoniwaEndpointNode` を使う
+- codec plugin path は `res://addons/hakoniwa/codecs/<package>_codec` のように拡張子なしを推奨する
+- `HakoniwaCodecRegistry` を直接使うのは low-level 利用とし、codec の `.gdextension` 初期化順を理解している場合に限る
+
+詳細:
+
+- [installation.md](/Users/tmori/project/oss/hakoniwa-godot/docs/installation.md)
+- [api_overview.md](/Users/tmori/project/oss/hakoniwa-godot/docs/api_overview.md)
+- [troubleshooting.md](/Users/tmori/project/oss/hakoniwa-godot/docs/troubleshooting.md)
 
 ---
 

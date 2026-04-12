@@ -18,16 +18,48 @@
 ### 起動
 
 ```text
+create SimulationNode
+  -> bind EndpointNode
 create CodecRegistry Node
   -> load plugin(s)
 create Endpoint Node
   -> open(config)
-  -> start
-  -> process_recv_events
+SimulationNode.initialize(asset_name)
+  -> poll_event
+  -> Start event
+  -> Endpoint.start
+  -> _physics_process で step
+  -> Endpoint.process_recv_events
   -> recv / recv_next
   -> decode if needed
-  -> stop
-  -> close
+  -> Stop/Reset event
+  -> Endpoint.stop
+  -> Endpoint.close
+  -> SimulationNode.shutdown
+```
+
+### time sync
+
+```text
+_ready
+  -> codec load
+  -> endpoint.open
+  -> simulation.initialize
+
+_physics_process
+  -> simulation.poll_event
+  -> if Start: endpoint.start
+  -> if Running and world_time reached:
+       endpoint.process_recv_events
+       user simulation step
+       simulation.notify_simtime(next_asset_time)
+  -> if Stop: endpoint.stop
+  -> if Reset: endpoint cleanup and scene reset
+
+_exit_tree
+  -> endpoint.stop
+  -> endpoint.close
+  -> simulation.shutdown
 ```
 
 ### latest
@@ -122,8 +154,10 @@ func _exit_tree() -> void:
 
 ```gdscript
 const HakoniwaEndpointNode = preload("res://addons/hakoniwa/scripts/hakoniwa_pdu_endpoint.gd")
+const HakoniwaSimulationNode = preload("res://addons/hakoniwa/scripts/hakoniwa_simulation_node.gd")
 
 var endpoint: HakoniwaEndpointNode
+var simulation: HakoniwaSimulationNode
 
 func _ready() -> void:
 	endpoint = HakoniwaEndpointNode.new()
@@ -134,17 +168,23 @@ func _ready() -> void:
 	])
 	endpoint.load_configured_codecs()
 	endpoint.open_endpoint()
-	endpoint.start_endpoint()
 
-func _process(delta: float) -> void:
-	endpoint.process_recv_events()
-	var record = endpoint.recv_message("drone0", "sample_state", "std_msgs", "UInt64")
-	if not record.is_empty():
-		print(record["value"]["data"])
+	simulation = HakoniwaSimulationNode.new()
+	add_child(simulation)
+	simulation.asset_name = "GodotAsset"
+	simulation.bind_endpoint(endpoint)
+	simulation.initialize()
+
+func _physics_process(_delta: float) -> void:
+	if simulation.step():
+		var record = endpoint.recv_message("drone0", "sample_state", "std_msgs", "UInt64")
+		if not record.is_empty():
+			print(record["value"]["data"])
 
 func _exit_tree() -> void:
 	endpoint.stop_endpoint()
 	endpoint.close_endpoint()
+	simulation.shutdown()
 ```
 
 typed object を使う場合:
@@ -166,6 +206,40 @@ func recv_typed(endpoint: HakoniwaEndpointNode) -> void:
 ```
 
 ## 受信サンプル
+
+`HakoniwaSimulationNode` を含む最小ライフサイクル:
+
+```gdscript
+extends Node
+
+var simulation: HakoniwaSimulationNode
+var endpoint: HakoniwaEndpointNode
+
+func _ready() -> void:
+	endpoint = HakoniwaEndpointNode.new()
+	add_child(endpoint)
+	endpoint.config_path = "res://config/endpoint_queue.json"
+	endpoint.open_endpoint()
+
+	simulation = HakoniwaSimulationNode.new()
+	add_child(simulation)
+	simulation.asset_name = "GodotAsset"
+	simulation.bind_endpoint(endpoint)
+	simulation.initialize()
+
+func _physics_process(_delta: float) -> void:
+	if simulation.step():
+		while endpoint.get_pending_count() > 0:
+			var record = endpoint.recv_next_raw()
+			if record.is_empty():
+				break
+			print(record)
+
+func _exit_tree() -> void:
+	endpoint.stop_endpoint()
+	endpoint.close_endpoint()
+	simulation.shutdown()
+```
 
 `queue` モードを毎フレーム drain する最小例:
 

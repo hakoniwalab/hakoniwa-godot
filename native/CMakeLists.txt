@@ -39,6 +39,7 @@ set_target_properties(
 target_sources(
   ${HAKONIWA_GODOT_NATIVE_TARGET}
   PRIVATE
+    src/hakoniwa_core_asset.cpp
     src/hakoniwa_codec_registry.cpp
     src/hakoniwa_pdu_endpoint.cpp
     src/register_types.cpp
@@ -48,6 +49,7 @@ target_include_directories(
   ${HAKONIWA_GODOT_NATIVE_TARGET}
   PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    "${HAKONIWA_GODOT_CORE_PRO_DIR}/include"
 )
 
 target_link_libraries(
@@ -56,6 +58,7 @@ target_link_libraries(
     godot-cpp
     hakoniwa_godot_codec_runtime
     hakoniwa_pdu_endpoint
+    shakoc
 )
 
 set_target_properties(

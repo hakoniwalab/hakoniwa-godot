@@ -16,6 +16,42 @@
 
 ## 初期対象
 
+### `HakoniwaCoreAsset`
+
+- `initialize_asset(asset_name: String) -> int`
+- `unregister_asset() -> int`
+- `poll_event() -> int`
+- `get_simulation_state() -> int`
+- `get_world_time_usec() -> int`
+- `get_simtime_usec() -> int`
+- `notify_simtime(simtime_usec: int) -> void`
+- `start_feedback_ok() -> int`
+- `stop_feedback_ok() -> int`
+- `reset_feedback_ok() -> int`
+- `get_last_error() -> String`
+
+### `HakoniwaSimNode`
+
+- `asset_name: String`
+- `use_internal_shm_endpoint: bool`
+- `shm_endpoint_config_path: String`
+- `auto_initialize_on_ready: bool`
+- `auto_unregister_on_exit: bool`
+- `auto_tick_on_physics_process: bool`
+- `initialize() -> int`
+- `shutdown() -> void`
+- `set_callbacks(callbacks: HakoniwaSimulationCallbacks) -> void`
+- `request_start() -> int`
+- `request_stop() -> int`
+- `request_reset() -> int`
+- `tick() -> bool`
+- `get_state() -> int`
+- `get_world_time_usec() -> int`
+- `get_simtime_usec() -> int`
+- `get_typed_endpoint(robot: String, pdu_name: String) -> Variant`
+- `get_endpoint() -> Variant`
+- `get_last_error_text() -> String`
+
 ### `HakoniwaPduEndpoint`
 
 想定している記載対象:
@@ -101,6 +137,27 @@
 
 ## API 要約
 
+### `HakoniwaCoreAsset`
+
+- 責務: `hakoniwa-core-pro` polling API の native wrapper
+- PDU I/O は持たず、時間同期と asset lifecycle だけを担当する
+- Godot 側の上位 wrapper から 1 instance 前提で使う
+- `get_world_time_usec()` は箱庭全体の時刻を返す
+- `get_simtime_usec()` は当該 asset が最後に進めた時刻を返す
+
+### `HakoniwaSimNode`
+
+- 責務: `HakoniwaCoreAsset` を Godot lifecycle に接続する GDScript wrapper
+- `Start` / `Stop` / `Reset` event を callback 実行へ変換する
+- `request_start()` / `request_stop()` / `request_reset()` で lifecycle event を要求できる
+- `tick() -> bool` により simulation step 実行可否を返す
+- 内部 SHM endpoint の start / stop / pump を統合できる
+- 同一アプリ内で複数 instance を許可しない
+- `get_state()` は debug / UI 表示用であり、制御用ではない
+- `get_simtime_usec()` は asset 側の現在 simtime を返す
+- `get_typed_endpoint()` は internal SHM endpoint 利用時の sugar API
+- WebSocket など他 transport の endpoint は `HakoniwaSimNode` の管理対象外
+
 ### `HakoniwaPduEndpoint`
 
 - 責務: endpoint lifecycle と raw binary send / recv
@@ -113,11 +170,14 @@
 - `plugin_paths` は `_ready()` 自動ロード対象
 - `load_plugin()` は `res://` / `user://` を実パスへ解決する
 - 拡張子が省略された場合は platform ごとの shared library suffix を補完する
+- low-level API として扱う。通常利用では `HakoniwaEndpointNode` 経由を推奨する
+- `.gdextension` resource の初期化は自動では吸収しないため、直接利用時は呼び出し側が初期化順を保証する必要がある
 
 ### `HakoniwaEndpointNode`
 
 - 責務: `HakoniwaPduEndpoint` と `HakoniwaCodecRegistry` を束ねる GDScript wrapper
 - raw API と decode 付き API の両方を提供する
+- codec plugin path に対応する `.gdextension` resource のロードを内部で吸収する
 - `decode_record()` / `recv_message()` / `recv_next_message()` は `{robot, channel_id, pdu_name, timestamp_ns, value}` を返す
 - `decode_typed_record()` / `recv_typed_message()` / `recv_next_typed_message()` は `typed_value` を追加で返す
 - typed script は `message_script_roots` 配下の `<package>/<message>.gd` から解決する
@@ -135,10 +195,24 @@
 
 1. `HakoniwaCodecRegistry` で codec plugin をロードする
 2. `HakoniwaPduEndpoint` を `open()` する
-3. `HakoniwaPduEndpoint` を `start()` する
+3. `HakoniwaSimNode` を `initialize()` する
+4. `Start` event 後に `HakoniwaPduEndpoint` を `start()` する
+
+codec plugin path の推奨形:
+
+- `res://addons/hakoniwa/codecs/hako_msgs_codec`
+- `res://addons/hakoniwa/codecs/std_msgs_codec`
+- `res://addons/hakoniwa/codecs/geometry_msgs_codec`
+
+通常利用では、`.dylib` / `.so` / `.dll` を直接指定しない。
 
 ## fallback
 
 - codec plugin が見つからない場合、`HakoniwaCodecRegistry.decode()` は空 `Dictionary` を返す
 - codec plugin が見つからない場合、`HakoniwaCodecRegistry.encode()` は空 `PackedByteArray` を返す
 - その場合でも `HakoniwaPduEndpoint` の raw API は利用できる
+
+## 注意
+
+- `HakoniwaSimNode` / `HakoniwaEndpointNode` を使う場合は、codec plugin の GDExtension 初期化順は framework 側が吸収する
+- `HakoniwaCodecRegistry` を直接使う場合は、対応する `<package>_codec.gdextension` のロードを先に済ませること

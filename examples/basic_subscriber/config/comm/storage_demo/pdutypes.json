@@ -1,5 +1,7 @@
 [
   { "channel_id": 0, "pdu_size": 32, "name": "sample_state", "type": "std_msgs/UInt64" },
   { "channel_id": 1, "pdu_size": 80, "name": "sample_pose", "type": "geometry_msgs/Pose" },
-  { "channel_id": 2, "pdu_size": 512, "name": "sample_multi", "type": "std_msgs/UInt64MultiArray" }
+  { "channel_id": 2, "pdu_size": 512, "name": "sample_multi", "type": "std_msgs/UInt64MultiArray" },
+  { "channel_id": 3, "pdu_size": 72, "name": "motor", "type": "geometry_msgs/Twist" },
+  { "channel_id": 4, "pdu_size": 72, "name": "pos", "type": "geometry_msgs/Twist" }
 ]

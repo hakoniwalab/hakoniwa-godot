@@ -37,6 +37,7 @@ public:
   bool is_running() const;
   int get_pending_count() const;
   int set_recv_event(const String &robot, int channel_id);
+  int get_pdu_channel_id_by_name(const String &robot, const String &pdu_name) const;
   Dictionary recv_by_name(const String &robot, const String &pdu_name);
   Dictionary recv_next();
   int send_by_name(const String &robot, const String &pdu_name, const PackedByteArray &payload);

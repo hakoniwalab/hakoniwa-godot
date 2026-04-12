@@ -120,6 +120,19 @@ bash tools/codec_plugin_tool.sh configure --packages "hako_msgs;std_msgs"
 bash tools/codec_plugin_tool.sh build
 ```
 
+custom codec を含める場合の基本手順:
+
+1. `tools/codec_plugin_tool.sh configure --packages "<package>"` を実行する
+2. `tools/codec_plugin_tool.sh build` を実行する
+3. 以下が両方生成されていることを確認する
+
+- `addons/hakoniwa/codecs/<package>_codec.<shared-library>`
+- `addons/hakoniwa/codecs/<package>_codec.gdextension`
+
+4. typed GDScript class が必要なら `tools/message_addon_tool.sh sync --packages "<package>"` を実行する
+5. まず `examples/basic_subscriber` 相当の endpoint-only 動作確認を行う
+6. その後に `HakoniwaSimNode` や `hakoniwa-core-pro` 統合へ進む
+
 generated GDScript message class を `addons/hakoniwa_msgs` へ同期する場合:
 
 ```bash
@@ -245,3 +258,23 @@ true
 - 単純型: `std_msgs/UInt64`
 - 複雑型: `geometry_msgs/Pose`
 - 可変長配列: `std_msgs/UInt64MultiArray`
+
+追加で、`geometry_msgs/Twist` による `motor` / `pos` の endpoint-only typed send / recv も確認済みである。
+
+## codec plugin 利用時の注意
+
+通常利用では、codec plugin path は拡張子なしで指定する。
+
+例:
+
+```gdscript
+endpoint.codec_plugins = PackedStringArray([
+    "res://addons/hakoniwa/codecs/geometry_msgs_codec"
+])
+```
+
+`HakoniwaEndpointNode` と `HakoniwaSimNode` は、内部で対応する `.gdextension` resource のロードを吸収する。
+
+一方で `HakoniwaCodecRegistry` を直接使う low-level 利用では、先に対応する `.gdextension` を `load()` してから plugin を使うこと。
+
+詳細は [troubleshooting.md](/Users/tmori/project/oss/hakoniwa-godot/docs/troubleshooting.md) を参照。

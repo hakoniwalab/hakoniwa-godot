@@ -4,6 +4,7 @@
 
 #include <godot_cpp/godot.hpp>
 
+#include "hakoniwa_core_asset.h"
 #include "hakoniwa_codec_registry.h"
 #include "hakoniwa_pdu_endpoint.h"
 
@@ -14,6 +15,7 @@ void initialize_hakoniwa_module(ModuleInitializationLevel p_level) {
     return;
   }
 
+  GDREGISTER_CLASS(HakoniwaCoreAsset);
   GDREGISTER_CLASS(HakoniwaCodecRegistry);
   GDREGISTER_CLASS(HakoniwaPduEndpoint);
 }

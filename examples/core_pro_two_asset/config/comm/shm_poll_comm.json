@@ -1,0 +1,18 @@
+{
+  "protocol": "shm",
+  "impl_type": "poll",
+  "asset_name": "godot_core_pro_plant",
+  "name": "hakoniwa_shared_memory",
+  "direction": "inout",
+  "io": {
+    "robots": [
+      {
+        "name": "Robot",
+        "pdu": [
+          { "name": "motor", "notify_on_recv": true },
+          { "name": "pos", "notify_on_recv": false }
+        ]
+      }
+    ]
+  }
+}

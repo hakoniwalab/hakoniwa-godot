@@ -85,6 +85,8 @@ void HakoniwaPduEndpoint::_bind_methods() {
   ClassDB::bind_method(D_METHOD("is_running"), &HakoniwaPduEndpoint::is_running);
   ClassDB::bind_method(D_METHOD("get_pending_count"), &HakoniwaPduEndpoint::get_pending_count);
   ClassDB::bind_method(D_METHOD("set_recv_event", "robot", "channel_id"), &HakoniwaPduEndpoint::set_recv_event);
+  ClassDB::bind_method(D_METHOD("get_pdu_channel_id_by_name", "robot", "pdu_name"),
+                       &HakoniwaPduEndpoint::get_pdu_channel_id_by_name);
   ClassDB::bind_method(D_METHOD("recv_by_name", "robot", "pdu_name"), &HakoniwaPduEndpoint::recv_by_name);
   ClassDB::bind_method(D_METHOD("recv_next"), &HakoniwaPduEndpoint::recv_next);
   ClassDB::bind_method(D_METHOD("send_by_name", "robot", "pdu_name", "payload"), &HakoniwaPduEndpoint::send_by_name);
@@ -235,6 +237,25 @@ int HakoniwaPduEndpoint::set_recv_event(const String &robot, int channel_id) {
   }
   set_last_error(hako_pdu_endpoint_set_recv_event(handle_, &key));
   return last_error_;
+}
+
+int HakoniwaPduEndpoint::get_pdu_channel_id_by_name(const String &robot, const String &pdu_name) const {
+  if (handle_ == nullptr) {
+    set_last_error(HAKO_PDU_ERR_INVALID_ARGUMENT);
+    return -1;
+  }
+  hako_pdu_key_t key{};
+  if (!make_name_key(robot, pdu_name, key)) {
+    set_last_error(HAKO_PDU_ERR_INVALID_ARGUMENT);
+    return -1;
+  }
+  const int channel_id = hako_pdu_endpoint_get_pdu_channel_id(handle_, &key);
+  if (channel_id < 0) {
+    set_last_error(HAKO_PDU_ERR_INVALID_PDU_KEY);
+    return -1;
+  }
+  set_last_error(HAKO_PDU_ERR_OK);
+  return channel_id;
 }
 
 Dictionary HakoniwaPduEndpoint::recv_by_name(const String &robot, const String &pdu_name) {

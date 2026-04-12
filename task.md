@@ -58,8 +58,16 @@
 
 ### M7. 時間同期 / 操作系
 
-- [ ] `hakoniwa-core-pro` の時間同期モデルを設計する
-- [ ] Godot 側の時間制御 API を定義する
+- [x] `hakoniwa-core-pro` の時間同期モデルを設計する
+- [x] Godot 側の時間制御 API を定義する
+- [x] 最初のテスト方針を定義する
+- [x] `hakoniwa-core-pro` の単体テスト設計を起こす
+- [x] `hakoniwa-core-pro` polling C API の native wrapper を追加する
+- [x] thin GDScript bridge を追加する
+- [x] `HakoniwaSimNode` の最小骨格を実装する
+- [x] conductor 付き lifecycle smoke を通す
+- [x] reset 後の再 start lifecycle smoke を通す
+- [ ] Godot + Python の 2 アセット統合テストを設計する
 - [ ] 最小の時間同期 sample を通す
 - [ ] `hakoniwa-pdu-rpc` の操作系 API を設計する
 - [ ] 最小の RPC sample を通す
@@ -92,7 +100,9 @@
 - [x] `example` を wrapper / typed endpoint ベースへ更新する
 - [x] 可変長配列の `pdu_size` 注意点を整理する
 - [ ] codec plugin auto-discovery を入れるか判断する
-- [ ] `hakoniwa-core-pro` 統合の docs を起こす
+- [x] `hakoniwa-core-pro` 統合の docs を起こす
+- [x] `hakoniwa-core-pro` のユーザインタフェースを設計する
+- [x] `hakoniwa-core-pro` の内部インタフェース 1 段目を実装する
 - [ ] `hakoniwa-pdu-rpc` 統合の docs を起こす
 
 ### 3. 実装開始条件の明確化

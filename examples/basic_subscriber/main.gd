@@ -39,6 +39,7 @@ func _ready() -> void:
 	_run_typed_demo()
 	_run_complex_typed_demo()
 	_run_varray_typed_demo()
+	_run_twist_pair_demo()
 
 	print("HAKONIWA_CODEC_SMOKE_OK")
 
@@ -115,6 +116,69 @@ func _run_latest_demo() -> void:
 	expect_equal(decoded["value"]["data"], 72623859790382856, "latest.decode.std_msgs.UInt64")
 
 	print(endpoint.is_running())
+
+	endpoint.stop_endpoint()
+	endpoint.close_endpoint()
+	endpoint.queue_free()
+
+func _run_twist_pair_demo() -> void:
+	var endpoint := _create_endpoint_node("res://config/endpoint_internal_with_pdu.json")
+	if endpoint == null:
+		return
+
+	print(endpoint.open_endpoint())
+	print(endpoint.start_endpoint())
+
+	var motor_endpoint = endpoint.get_typed_endpoint("drone0", "motor")
+	var pos_endpoint = endpoint.get_typed_endpoint("drone0", "pos")
+	if motor_endpoint == null or pos_endpoint == null:
+		fail(endpoint.get_last_error_text())
+		return
+
+	var motor = endpoint.to_typed_value("geometry_msgs", "Twist", {
+		"linear": {
+			"x": 1001.0,
+			"y": 1002.0,
+			"z": 1003.0
+		},
+		"angular": {
+			"x": 0.0,
+			"y": 0.0,
+			"z": 0.0
+		}
+	})
+	var pos = endpoint.to_typed_value("geometry_msgs", "Twist", {
+		"linear": {
+			"x": 1.0,
+			"y": 2.0,
+			"z": 3.0
+		},
+		"angular": {
+			"x": 0.0,
+			"y": 0.0,
+			"z": 0.0
+		}
+	})
+
+	print(motor_endpoint.send(motor))
+	print(pos_endpoint.send(pos))
+
+	var motor_record: Dictionary = motor_endpoint.recv_record()
+	var pos_record: Dictionary = pos_endpoint.recv_record()
+	print(motor_record)
+	print(pos_record)
+
+	expect_equal(motor_record["value"]["linear"]["x"], 1001.0, "twist.motor.record.linear.x")
+	expect_equal(motor_record["value"]["linear"]["z"], 1003.0, "twist.motor.record.linear.z")
+	expect_equal(pos_record["value"]["linear"]["x"], 1.0, "twist.pos.record.linear.x")
+	expect_equal(pos_record["value"]["linear"]["z"], 3.0, "twist.pos.record.linear.z")
+
+	var motor_recv = motor_endpoint.recv()
+	var pos_recv = pos_endpoint.recv()
+	var motor_dict: Dictionary = motor_recv.to_dict()
+	var pos_dict: Dictionary = pos_recv.to_dict()
+	expect_equal(motor_dict["linear"]["y"], 1002.0, "twist.motor.typed.linear.y")
+	expect_equal(pos_dict["linear"]["y"], 2.0, "twist.pos.typed.linear.y")
 
 	endpoint.stop_endpoint()
 	endpoint.close_endpoint()

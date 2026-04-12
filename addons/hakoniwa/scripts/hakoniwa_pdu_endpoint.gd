@@ -19,6 +19,7 @@ var _endpoint: Node = null
 var _codecs: Node = null
 var _last_error_text: String = ""
 var _typed_binding_cache: Dictionary = {}
+var _codec_extension_resources: Array = []
 
 func _ready() -> void:
 	if not _ensure_native_nodes():
@@ -151,6 +152,8 @@ func send_raw(robot: String, pdu_name: String, payload: PackedByteArray) -> int:
 
 func load_codec_plugin(plugin_path: String) -> bool:
 	if not _ensure_codecs():
+		return false
+	if not _load_codec_gdextension(plugin_path):
 		return false
 	var loaded: bool = _codecs.load_plugin(plugin_path)
 	_update_codec_error("load_codec_plugin")
@@ -323,6 +326,30 @@ func _update_codec_error(context: String) -> void:
 		_last_error_text = ""
 	else:
 		_last_error_text = "%s failed: %s" % [context, error_text]
+
+func _load_codec_gdextension(plugin_path: String) -> bool:
+	var gdextension_path := _to_codec_gdextension_path(plugin_path)
+	if gdextension_path.is_empty():
+		return true
+	var extension: Resource = load(gdextension_path)
+	if extension == null:
+		_last_error_text = "load_codec_gdextension failed: %s" % gdextension_path
+		return false
+	_codec_extension_resources.append(extension)
+	_last_error_text = ""
+	return true
+
+func _to_codec_gdextension_path(plugin_path: String) -> String:
+	if plugin_path.is_empty():
+		return ""
+	if plugin_path.ends_with(".gdextension"):
+		return plugin_path
+	if plugin_path.ends_with(".dylib") or plugin_path.ends_with(".so") or plugin_path.ends_with(".dll"):
+		var ext_index := plugin_path.rfind(".")
+		if ext_index >= 0:
+			return plugin_path.substr(0, ext_index) + ".gdextension"
+		return ""
+	return plugin_path + ".gdextension"
 
 func _load_message_script(package_name: String, message_name: String) -> GDScript:
 	for root in message_script_roots:
