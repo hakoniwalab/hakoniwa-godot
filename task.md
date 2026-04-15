@@ -103,6 +103,11 @@
 - [x] `hakoniwa-core-pro` 統合の docs を起こす
 - [x] `hakoniwa-core-pro` のユーザインタフェースを設計する
 - [x] `hakoniwa-core-pro` の内部インタフェース 1 段目を実装する
+- [ ] `issue-physics.md` に基づき Godot physics 停止方式を調査する
+- [ ] physics 停止時に `_physics_process()` / `_process()` がどう振る舞うかを確認する
+- [ ] UI を止めずに simulation だけ止める構成を検証する
+- [ ] UI root / monitor node に `process_mode = Always` が必要であることをマニュアルへ追記する
+- [ ] physics 連携時の state model (`BLOCKED_BY_WORLD_TIME` など) を設計へ反映する
 - [ ] `hakoniwa-pdu-rpc` 統合の docs を起こす
 
 ### 3. 実装開始条件の明確化
