@@ -31,11 +31,13 @@ func _ready() -> void:
 	add_child(_sim)
 	_sim.asset_name = "godot_core_pro_plant"
 	_sim.delta_time_usec = 20000
+	_sim.enable_physics_time_sync = false
 	_sim.use_internal_shm_endpoint = true
 	_sim.shm_endpoint_config_path = "res://config/endpoint_shm_with_pdu.json"
 	_sim.simulation_started.connect(_on_simulation_started)
 	_sim.simulation_stopped.connect(_on_simulation_stopped)
 	_sim.simulation_reset.connect(_on_simulation_reset)
+	_sim.simulation_step.connect(_on_simulation_step)
 
 	var initialize_result: int = _sim.initialize()
 	if initialize_result != 0:
@@ -76,11 +78,8 @@ func _ready() -> void:
 		print(_sim.get_last_error_text())
 		get_tree().quit(2)
 
-func _physics_process(_delta: float) -> void:
+func _on_simulation_step(_simtime_usec: int, world_time_usec: int) -> void:
 	if _sim == null or _completed:
-		return
-
-	if not _sim.tick():
 		return
 
 	var next_index := _step_count + 1
@@ -111,7 +110,7 @@ func _physics_process(_delta: float) -> void:
 	print("HAKO_TWO_ASSET_STEP:%d simtime=%d world=%d pos=%s" % [
 		_step_count,
 		_sim.get_simtime_usec(),
-		_sim.get_world_time_usec(),
+		world_time_usec,
 		JSON.stringify(pos_dict)
 	])
 

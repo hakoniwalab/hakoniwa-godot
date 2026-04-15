@@ -4,6 +4,7 @@ extends Node
 signal simulation_started
 signal simulation_stopped
 signal simulation_reset
+signal simulation_step(simtime_usec, world_time_usec)
 
 const HakoniwaEndpointNode = preload("res://addons/hakoniwa/scripts/hakoniwa_pdu_endpoint.gd")
 
@@ -21,6 +22,14 @@ const EVENT_STOP := 2
 const EVENT_RESET := 3
 const EVENT_ERROR := 4
 
+const SYNC_STATE_UNINITIALIZED := 0
+const SYNC_STATE_STOPPED := 1
+const SYNC_STATE_RUNNING := 2
+const SYNC_STATE_BLOCKED_BY_WORLD_TIME := 3
+const SYNC_STATE_RESETTING := 4
+const SYNC_STATE_ERROR := 5
+const SYNC_STATE_TERMINATED := 6
+
 @export var asset_name: String = ""
 @export var use_internal_shm_endpoint: bool = false
 @export var shm_endpoint_config_path: String = ""
@@ -28,24 +37,40 @@ const EVENT_ERROR := 4
 @export var auto_initialize_on_ready: bool = false
 @export var auto_unregister_on_exit: bool = true
 @export var auto_tick_on_physics_process: bool = false
+@export var enable_physics_time_sync: bool = false
 
 var _core_asset: Node = null
 var _internal_endpoint: Node = null
 var _callbacks = null
 var _last_error_text: String = ""
 var _current_simtime_usec: int = 0
+var _sync_state: int = SYNC_STATE_UNINITIALIZED
+var _blocked_tree_pause_applied: bool = false
 
 func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	if auto_initialize_on_ready:
 		var result := initialize()
 		if result != 0:
 			push_error(_last_error_text)
 
+func _process(_delta: float) -> void:
+	if _sync_state == SYNC_STATE_UNINITIALIZED or _sync_state == SYNC_STATE_TERMINATED:
+		return
+	if enable_physics_time_sync and _sync_state == SYNC_STATE_BLOCKED_BY_WORLD_TIME:
+		var step_ready := _tick_internal(false)
+		if step_ready:
+			_leave_blocked_state()
+
 func _physics_process(_delta: float) -> void:
-	if auto_tick_on_physics_process:
-		tick()
+	if _sync_state == SYNC_STATE_UNINITIALIZED or _sync_state == SYNC_STATE_TERMINATED:
+		return
+	if enable_physics_time_sync and _sync_state == SYNC_STATE_BLOCKED_BY_WORLD_TIME:
+		return
+	_tick_internal(true)
 
 func _exit_tree() -> void:
+	_leave_blocked_state()
 	if auto_unregister_on_exit:
 		shutdown()
 
@@ -79,9 +104,11 @@ func initialize() -> int:
 	_update_error("initialize")
 	if result == 0:
 		_current_simtime_usec = 0
+		_sync_state = SYNC_STATE_STOPPED
 	return result
 
 func shutdown() -> void:
+	_leave_blocked_state()
 	if _core_asset == null:
 		return
 	if _internal_endpoint != null:
@@ -91,6 +118,9 @@ func shutdown() -> void:
 	_update_error("shutdown")
 	if _last_error_text.is_empty():
 		_current_simtime_usec = 0
+		_sync_state = SYNC_STATE_TERMINATED
+	else:
+		_sync_state = SYNC_STATE_ERROR
 
 func request_start() -> int:
 	if not _ensure_core_asset():
@@ -113,111 +143,18 @@ func request_reset() -> int:
 	_update_error("request_reset")
 	return result
 
-func tick() -> bool:
-	if not _ensure_core_asset():
-		return false
-
-	var event: int = _core_asset.poll_event()
-	_update_error("tick.poll_event")
-	if event < 0:
-		return false
-
-	if event == EVENT_START:
-		if _internal_endpoint != null:
-			var start_endpoint_result: int = _internal_endpoint.start_endpoint()
-			if start_endpoint_result != 0:
-				_last_error_text = _internal_endpoint.get_last_error_text()
-				return false
-			var post_start_endpoint_result: int = _internal_endpoint.post_start_endpoint()
-			if post_start_endpoint_result != 0:
-				_last_error_text = _internal_endpoint.get_last_error_text()
-				return false
-		if _callbacks != null:
-			_callbacks.on_simulation_start()
-		_core_asset.notify_write_pdu_done()
-		_update_error("tick.notify_write_pdu_done")
-		if not _last_error_text.is_empty():
-			return false
-		var start_result: int = _core_asset.start_feedback_ok()
-		_update_error("tick.start_feedback_ok")
-		if start_result == 0:
-			simulation_started.emit()
-		return false
-
-	if event == EVENT_STOP:
-		if _callbacks != null:
-			_callbacks.on_simulation_stop()
-		if _internal_endpoint != null:
-			_internal_endpoint.stop_endpoint()
-		var stop_result: int = _core_asset.stop_feedback_ok()
-		_update_error("tick.stop_feedback_ok")
-		if stop_result == 0:
-			simulation_stopped.emit()
-		return false
-
-	if event == EVENT_RESET:
-		if _callbacks != null:
-			_callbacks.on_simulation_reset()
-		var reset_result: int = _core_asset.reset_feedback_ok()
-		_update_error("tick.reset_feedback_ok")
-		if reset_result == 0:
-			_current_simtime_usec = 0
-			simulation_reset.emit()
-		return false
-
-	if event == EVENT_ERROR:
-		_last_error_text = "tick failed: received EVENT_ERROR"
-		return false
-
-	var state: int = _core_asset.get_simulation_state()
-	_update_error("tick.get_simulation_state")
-	if state != STATE_RUNNING:
-		return false
-
-	var pdu_created: bool = _core_asset.is_pdu_created()
-	_update_error("tick.is_pdu_created")
-	if not _last_error_text.is_empty():
-		return false
-	if not pdu_created:
-		return false
-
-	var pdu_sync_mode: bool = _core_asset.is_pdu_sync_mode()
-	_update_error("tick.is_pdu_sync_mode")
-	if not _last_error_text.is_empty():
-		return false
-	if pdu_sync_mode:
-		if _internal_endpoint != null and _internal_endpoint.is_running():
-			_internal_endpoint.dispatch_recv_events()
-		_core_asset.notify_write_pdu_done()
-		_update_error("tick.notify_write_pdu_done")
-		return _last_error_text.is_empty() and false
-
-	if _internal_endpoint != null and _internal_endpoint.is_running():
-		_internal_endpoint.dispatch_recv_events()
-
-	_core_asset.notify_simtime(_current_simtime_usec)
-	_update_error("tick.notify_simtime")
-	if not _last_error_text.is_empty():
-		return false
-
-	var world_time_usec: int = _core_asset.get_world_time_usec()
-	_update_error("tick.get_world_time_usec")
-	if not _last_error_text.is_empty():
-		return false
-
-	var next_simtime_usec := _current_simtime_usec + delta_time_usec
-	if next_simtime_usec > world_time_usec:
-		return false
-
-	_current_simtime_usec = next_simtime_usec
-	return true
-
 func get_state() -> int:
 	if not _ensure_core_asset():
 		return STATE_ERROR
 	var state: int = _core_asset.get_simulation_state()
 	_update_error("get_state")
 	return state
+
+func get_sync_state() -> int:
+	return _sync_state
+
+func is_blocked_by_world_time() -> bool:
+	return _sync_state == SYNC_STATE_BLOCKED_BY_WORLD_TIME
 
 func get_world_time_usec() -> int:
 	if not _ensure_core_asset():
@@ -250,6 +187,179 @@ func get_endpoint() -> Variant:
 		return null
 	_last_error_text = ""
 	return _internal_endpoint
+
+func _tick_internal(allow_step: bool) -> bool:
+	if not _ensure_core_asset():
+		_sync_state = SYNC_STATE_ERROR
+		return false
+
+	var event: int = _core_asset.poll_event()
+	_update_error("tick.poll_event")
+	if event < 0:
+		_sync_state = SYNC_STATE_ERROR
+		return false
+
+	if event == EVENT_START:
+		return _handle_start_event()
+
+	if event == EVENT_STOP:
+		_handle_stop_event()
+		return false
+
+	if event == EVENT_RESET:
+		_handle_reset_event()
+		return false
+
+	if event == EVENT_ERROR:
+		_last_error_text = "tick failed: received EVENT_ERROR"
+		_sync_state = SYNC_STATE_ERROR
+		return false
+
+	var state: int = _core_asset.get_simulation_state()
+	_update_error("tick.get_simulation_state")
+	if not _last_error_text.is_empty():
+		_sync_state = SYNC_STATE_ERROR
+		return false
+	if state != STATE_RUNNING:
+		_sync_state = SYNC_STATE_STOPPED
+		return false
+	_sync_state = SYNC_STATE_RUNNING
+
+	var pdu_created: bool = _core_asset.is_pdu_created()
+	_update_error("tick.is_pdu_created")
+	if not _last_error_text.is_empty():
+		_sync_state = SYNC_STATE_ERROR
+		return false
+	if not pdu_created:
+		return false
+
+	var pdu_sync_mode: bool = _core_asset.is_pdu_sync_mode()
+	_update_error("tick.is_pdu_sync_mode")
+	if not _last_error_text.is_empty():
+		_sync_state = SYNC_STATE_ERROR
+		return false
+	if pdu_sync_mode:
+		if _internal_endpoint != null and _internal_endpoint.is_running():
+			_internal_endpoint.dispatch_recv_events()
+		_core_asset.notify_write_pdu_done()
+		_update_error("tick.notify_write_pdu_done")
+		if not _last_error_text.is_empty():
+			_sync_state = SYNC_STATE_ERROR
+		return false
+
+	var world_time_usec: int = _core_asset.get_world_time_usec()
+	_update_error("tick.get_world_time_usec")
+	if not _last_error_text.is_empty():
+		_sync_state = SYNC_STATE_ERROR
+		return false
+
+	var next_simtime_usec := _current_simtime_usec + delta_time_usec
+	var step_ready := next_simtime_usec <= world_time_usec
+	if not step_ready:
+		if enable_physics_time_sync and allow_step:
+			_enter_blocked_state()
+		return false
+
+	if not allow_step:
+		return true
+
+	_leave_blocked_state()
+	if _internal_endpoint != null and _internal_endpoint.is_running():
+		_internal_endpoint.dispatch_recv_events()
+
+	_current_simtime_usec = next_simtime_usec
+	_core_asset.notify_simtime(_current_simtime_usec)
+	_update_error("tick.notify_simtime")
+	if not _last_error_text.is_empty():
+		_sync_state = SYNC_STATE_ERROR
+		return false
+
+	if _callbacks != null and _callbacks.has_method("on_simulation_step"):
+		_callbacks.on_simulation_step(_current_simtime_usec, world_time_usec)
+	simulation_step.emit(_current_simtime_usec, world_time_usec)
+	return true
+
+func _handle_start_event() -> bool:
+	_leave_blocked_state()
+	if _internal_endpoint != null:
+		var start_endpoint_result: int = _internal_endpoint.start_endpoint()
+		if start_endpoint_result != 0:
+			_last_error_text = _internal_endpoint.get_last_error_text()
+			_sync_state = SYNC_STATE_ERROR
+			return false
+		var post_start_endpoint_result: int = _internal_endpoint.post_start_endpoint()
+		if post_start_endpoint_result != 0:
+			_last_error_text = _internal_endpoint.get_last_error_text()
+			_sync_state = SYNC_STATE_ERROR
+			return false
+	if _callbacks != null:
+		_callbacks.on_simulation_start()
+	_core_asset.notify_write_pdu_done()
+	_update_error("tick.notify_write_pdu_done")
+	if not _last_error_text.is_empty():
+		_sync_state = SYNC_STATE_ERROR
+		return false
+	var start_result: int = _core_asset.start_feedback_ok()
+	_update_error("tick.start_feedback_ok")
+	if start_result == 0:
+		_sync_state = SYNC_STATE_RUNNING
+		simulation_started.emit()
+		return true
+	_sync_state = SYNC_STATE_ERROR
+	return false
+
+func _handle_stop_event() -> void:
+	_leave_blocked_state()
+	if _callbacks != null:
+		_callbacks.on_simulation_stop()
+	if _internal_endpoint != null:
+		_internal_endpoint.stop_endpoint()
+	var stop_result: int = _core_asset.stop_feedback_ok()
+	_update_error("tick.stop_feedback_ok")
+	if stop_result == 0:
+		_sync_state = SYNC_STATE_STOPPED
+		simulation_stopped.emit()
+	else:
+		_sync_state = SYNC_STATE_ERROR
+
+func _handle_reset_event() -> void:
+	_leave_blocked_state()
+	if _callbacks != null:
+		_callbacks.on_simulation_reset()
+	var reset_result: int = _core_asset.reset_feedback_ok()
+	_update_error("tick.reset_feedback_ok")
+	if reset_result == 0:
+		_current_simtime_usec = 0
+		_sync_state = SYNC_STATE_RESETTING
+		simulation_reset.emit()
+	else:
+		_sync_state = SYNC_STATE_ERROR
+
+func _enter_blocked_state() -> void:
+	if _sync_state == SYNC_STATE_BLOCKED_BY_WORLD_TIME:
+		return
+	_sync_state = SYNC_STATE_BLOCKED_BY_WORLD_TIME
+	_apply_pause_backend(true)
+
+func _leave_blocked_state() -> void:
+	if _sync_state == SYNC_STATE_BLOCKED_BY_WORLD_TIME:
+		_sync_state = SYNC_STATE_RUNNING
+	_apply_pause_backend(false)
+
+func _apply_pause_backend(blocked: bool) -> void:
+	if not enable_physics_time_sync:
+		return
+	var tree := get_tree()
+	if tree == null:
+		return
+	if blocked:
+		if not tree.paused:
+			tree.paused = true
+			_blocked_tree_pause_applied = true
+	else:
+		if _blocked_tree_pause_applied and tree.paused:
+			tree.paused = false
+		_blocked_tree_pause_applied = false
 
 func _ensure_core_asset() -> bool:
 	if _core_asset != null:
