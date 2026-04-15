@@ -34,6 +34,7 @@ const SYNC_STATE_TERMINATED := 6
 @export var use_internal_shm_endpoint: bool = false
 @export var shm_endpoint_config_path: String = ""
 @export var delta_time_usec: int = 20000
+@export var auto_sync_delta_time_with_physics: bool = true
 @export var auto_initialize_on_ready: bool = false
 @export var auto_unregister_on_exit: bool = true
 @export var auto_tick_on_physics_process: bool = false
@@ -83,6 +84,12 @@ func initialize() -> int:
 	if asset_name.is_empty():
 		_last_error_text = "initialize failed: asset_name is empty"
 		return -1
+	if enable_physics_time_sync and auto_sync_delta_time_with_physics:
+		var synced_delta_time_usec := _get_physics_delta_time_usec()
+		if synced_delta_time_usec <= 0:
+			_last_error_text = "initialize failed: physics_ticks_per_second must be > 0"
+			return -1
+		delta_time_usec = synced_delta_time_usec
 	if delta_time_usec <= 0:
 		_last_error_text = "initialize failed: delta_time_usec must be > 0"
 		return -1
@@ -162,6 +169,9 @@ func get_world_time_usec() -> int:
 	var world_time_usec: int = _core_asset.get_world_time_usec()
 	_update_error("get_world_time_usec")
 	return world_time_usec
+
+func get_configured_delta_time_usec() -> int:
+	return delta_time_usec
 
 func get_simtime_usec() -> int:
 	return _current_simtime_usec
@@ -360,6 +370,11 @@ func _apply_pause_backend(blocked: bool) -> void:
 		if _blocked_tree_pause_applied and tree.paused:
 			tree.paused = false
 		_blocked_tree_pause_applied = false
+
+func _get_physics_delta_time_usec() -> int:
+	if Engine.physics_ticks_per_second <= 0:
+		return 0
+	return int(round(1000000.0 / float(Engine.physics_ticks_per_second)))
 
 func _ensure_core_asset() -> bool:
 	if _core_asset != null:
