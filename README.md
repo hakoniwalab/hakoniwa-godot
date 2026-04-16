@@ -175,6 +175,42 @@ bash tools/codec_plugin_tool.sh test
 bash tools/message_addon_tool.sh sync --packages all
 ```
 
+codec と message addon を一括で生成・配置する場合:
+
+```bash
+bash tools/build_all_codecs.sh
+```
+
+このスクリプトは次をまとめて実行する:
+
+- `tools/codec_plugin_tool.sh configure --packages all`
+- `tools/codec_plugin_tool.sh build`
+- `tools/message_addon_tool.sh sync --packages all`
+
+`core_pro_two_asset` のように複数 codec を前提にする example を動かす前には、この一括実行を推奨する。
+
+`core_pro_two_asset` の既知の安定起動手順:
+
+```bash
+# terminal 1
+bash tools/run_core_pro_conductor.sh
+
+# terminal 2
+cd examples/core_pro_two_asset
+python python_controller.py config/comm/pdu_def.json
+
+# terminal 3
+/Applications/Godot_mono.app/Contents/MacOS/Godot --headless --path /Users/tmori/project/oss/hakoniwa-godot/examples/core_pro_two_asset
+```
+
+physics 同期確認時は terminal 3 の Godot 起動に環境変数を付ける:
+
+```bash
+HAKO_ENABLE_PHYSICS_TIME_SYNC=1 HAKO_DEBUG_TIME_SYNC_LOGS=1 /Applications/Godot_mono.app/Contents/MacOS/Godot --headless --path /Users/tmori/project/oss/hakoniwa-godot/examples/core_pro_two_asset
+```
+
+Python controller には `config/comm/pdu_def.json` を渡すこと。`endpoint_shm_with_pdu.json` は Godot endpoint 用設定であり、Python 側には使わない。
+
 macOS addon artifact を作る場合:
 
 ```bash

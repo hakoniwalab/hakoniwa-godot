@@ -11,6 +11,9 @@ DEFAULT_CONDUCTOR_WAIT_SEC="1"
 DEFAULT_CONDUCTOR_DELTA_USEC="10000"
 DEFAULT_CONDUCTOR_MAX_DELAY_USEC="20000"
 
+KEEP_CONDUCTOR="false"
+CONDUCTOR_PID=""
+
 usage() {
   cat <<'EOF'
 Usage:
@@ -42,8 +45,8 @@ main() {
   local wait_sec="${DEFAULT_CONDUCTOR_WAIT_SEC}"
   local conductor_delta_usec="${DEFAULT_CONDUCTOR_DELTA_USEC}"
   local conductor_max_delay_usec="${DEFAULT_CONDUCTOR_MAX_DELAY_USEC}"
-  local keep_conductor="false"
-  local conductor_pid=""
+  KEEP_CONDUCTOR="false"
+  CONDUCTOR_PID=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -72,7 +75,7 @@ main() {
         shift 2
         ;;
       --keep-conductor)
-        keep_conductor="true"
+        KEEP_CONDUCTOR="true"
         shift 1
         ;;
       -h|--help|help)
@@ -102,12 +105,12 @@ main() {
   fi
 
   cleanup() {
-    if [[ "${keep_conductor}" == "true" ]]; then
+    if [[ "${KEEP_CONDUCTOR}" == "true" ]]; then
       return
     fi
-    if [[ -n "${conductor_pid}" ]] && kill -0 "${conductor_pid}" 2>/dev/null; then
-      kill "${conductor_pid}" 2>/dev/null || true
-      wait "${conductor_pid}" 2>/dev/null || true
+    if [[ -n "${CONDUCTOR_PID}" ]] && kill -0 "${CONDUCTOR_PID}" 2>/dev/null; then
+      kill "${CONDUCTOR_PID}" 2>/dev/null || true
+      wait "${CONDUCTOR_PID}" 2>/dev/null || true
     fi
   }
 
@@ -115,7 +118,7 @@ main() {
 
   echo "[core-pro-smoke] starting conductor: ${conductor_cmd}"
   /bin/zsh -lc "${conductor_cmd}" &
-  conductor_pid=$!
+  CONDUCTOR_PID=$!
 
   sleep "${wait_sec}"
 

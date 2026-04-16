@@ -39,6 +39,7 @@ const SYNC_STATE_TERMINATED := 6
 @export var auto_unregister_on_exit: bool = true
 @export var auto_tick_on_physics_process: bool = false
 @export var enable_physics_time_sync: bool = false
+@export var debug_time_sync_logs: bool = false
 
 var _core_asset: Node = null
 var _internal_endpoint: Node = null
@@ -47,6 +48,8 @@ var _last_error_text: String = ""
 var _current_simtime_usec: int = 0
 var _sync_state: int = SYNC_STATE_UNINITIALIZED
 var _blocked_tree_pause_applied: bool = false
+var _last_blocked_next_simtime_usec: int = -1
+var _last_blocked_world_time_usec: int = -1
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -90,6 +93,10 @@ func initialize() -> int:
 			_last_error_text = "initialize failed: physics_ticks_per_second must be > 0"
 			return -1
 		delta_time_usec = synced_delta_time_usec
+		_debug_log("auto-sync delta_time_usec=%d physics_ticks_per_second=%d" % [
+			delta_time_usec,
+			Engine.physics_ticks_per_second
+		])
 	if delta_time_usec <= 0:
 		_last_error_text = "initialize failed: delta_time_usec must be > 0"
 		return -1
@@ -266,11 +273,22 @@ func _tick_internal(allow_step: bool) -> bool:
 	var next_simtime_usec := _current_simtime_usec + delta_time_usec
 	var step_ready := next_simtime_usec <= world_time_usec
 	if not step_ready:
+		if _last_blocked_next_simtime_usec != next_simtime_usec or _last_blocked_world_time_usec != world_time_usec:
+			_last_blocked_next_simtime_usec = next_simtime_usec
+			_last_blocked_world_time_usec = world_time_usec
+			_debug_log("step blocked: next_simtime=%d world_time=%d" % [
+				next_simtime_usec,
+				world_time_usec
+			])
 		if enable_physics_time_sync and allow_step:
 			_enter_blocked_state()
 		return false
 
 	if not allow_step:
+		_debug_log("step ready while blocked monitor: next_simtime=%d world_time=%d" % [
+			next_simtime_usec,
+			world_time_usec
+		])
 		return true
 
 	_leave_blocked_state()
@@ -287,6 +305,10 @@ func _tick_internal(allow_step: bool) -> bool:
 	if _callbacks != null and _callbacks.has_method("on_simulation_step"):
 		_callbacks.on_simulation_step(_current_simtime_usec, world_time_usec)
 	simulation_step.emit(_current_simtime_usec, world_time_usec)
+	_debug_log("simulation_step simtime=%d world_time=%d" % [
+		_current_simtime_usec,
+		world_time_usec
+	])
 	return true
 
 func _handle_start_event() -> bool:
@@ -349,11 +371,17 @@ func _enter_blocked_state() -> void:
 	if _sync_state == SYNC_STATE_BLOCKED_BY_WORLD_TIME:
 		return
 	_sync_state = SYNC_STATE_BLOCKED_BY_WORLD_TIME
+	_last_blocked_next_simtime_usec = -1
+	_last_blocked_world_time_usec = -1
+	_debug_log("SYNC_STATE_BLOCKED_BY_WORLD_TIME")
 	_apply_pause_backend(true)
 
 func _leave_blocked_state() -> void:
 	if _sync_state == SYNC_STATE_BLOCKED_BY_WORLD_TIME:
 		_sync_state = SYNC_STATE_RUNNING
+		_debug_log("SYNC_STATE_RUNNING")
+	_last_blocked_next_simtime_usec = -1
+	_last_blocked_world_time_usec = -1
 	_apply_pause_backend(false)
 
 func _apply_pause_backend(blocked: bool) -> void:
@@ -366,15 +394,22 @@ func _apply_pause_backend(blocked: bool) -> void:
 		if not tree.paused:
 			tree.paused = true
 			_blocked_tree_pause_applied = true
+			_debug_log("PHYSICS_BACKEND_PAUSED")
 	else:
 		if _blocked_tree_pause_applied and tree.paused:
 			tree.paused = false
+			_debug_log("PHYSICS_BACKEND_RESUMED")
 		_blocked_tree_pause_applied = false
 
 func _get_physics_delta_time_usec() -> int:
 	if Engine.physics_ticks_per_second <= 0:
 		return 0
 	return int(round(1000000.0 / float(Engine.physics_ticks_per_second)))
+
+func _debug_log(message: String) -> void:
+	if not debug_time_sync_logs:
+		return
+	print("HAKO_SIM_DEBUG: %s" % message)
 
 func _ensure_core_asset() -> bool:
 	if _core_asset != null:

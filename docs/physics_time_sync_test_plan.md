@@ -111,6 +111,47 @@
 
 ## 手順
 
+### 事前準備
+
+ビルド:
+
+```bash
+cmake --preset default
+cmake --build --preset default
+```
+
+Godot 実行ファイルの例:
+
+```bash
+/Applications/Godot_mono.app/Contents/MacOS/Godot
+```
+
+以降のコマンドでは、この実行ファイルを `GODOT` と表記する。
+
+`core_pro_smoke` は conductor 前提なので、単独の `GODOT --headless --path ...` ではなく runner を使う。
+
+runner:
+
+```bash
+bash tools/run_core_pro_smoke.sh
+```
+
+physics 同期フラグ切り替え:
+
+```bash
+HAKO_ENABLE_PHYSICS_TIME_SYNC=0 bash tools/run_core_pro_smoke.sh
+HAKO_ENABLE_PHYSICS_TIME_SYNC=1 bash tools/run_core_pro_smoke.sh
+```
+
+debug log と観測ステップ数:
+
+```bash
+HAKO_ENABLE_PHYSICS_TIME_SYNC=1 \
+HAKO_DEBUG_TIME_SYNC_LOGS=1 \
+HAKO_SMOKE_STEP_TARGET=20 \
+bash tools/run_core_pro_smoke.sh
+```
+
 ### 手順 A: 既存 `core_pro_smoke`
 
 対象:
@@ -121,6 +162,18 @@
 
 - non-physics モードで `simulation_step` 主導の lifecycle が成立すること
 - physics 同期フラグを切り替えて挙動差を確認できること
+
+実行コマンド:
+
+```bash
+bash tools/run_core_pro_smoke.sh
+```
+
+GUI で確認する場合:
+
+```bash
+GODOT --path examples/core_pro_smoke
+```
 
 確認項目:
 
@@ -141,6 +194,10 @@
 - blocked に入る場合は debug log で確認できる
 - 再開時のルートも debug log で確認できる
 
+切り替え方法:
+
+- 環境変数 `HAKO_ENABLE_PHYSICS_TIME_SYNC=1` を付けて実行する
+
 期待ログ:
 
 - `HAKO_CORE_SMOKE_START_FEEDBACK_OK`
@@ -155,6 +212,8 @@
 - `PHYSICS_BACKEND_PAUSED`
 - `PHYSICS_BACKEND_RESUMED`
 
+blocked 経路を観測したい場合は、`HAKO_SMOKE_STEP_TARGET` を増やして観測時間を伸ばす。
+
 ### 手順 B: 既存 `core_pro_two_asset`
 
 対象:
@@ -165,6 +224,47 @@
 
 - non-physics モードで internal SHM endpoint と `simulation_step` が両立すること
 - 同じ example で physics 同期フラグを切り替えて確認できること
+
+実行コマンド:
+
+```bash
+# 端末1
+bash tools/run_core_pro_conductor.sh
+
+# 端末2
+cd /Users/tmori/project/oss/hakoniwa-godot/examples/core_pro_two_asset
+python python_controller.py config/comm/pdu_def.json
+
+# 端末3
+/Applications/Godot_mono.app/Contents/MacOS/Godot --headless --path /Users/tmori/project/oss/hakoniwa-godot/examples/core_pro_two_asset
+```
+
+補足:
+
+- `core_pro_two_asset` は起動順依存がある
+- 現時点で確認できている安定手順は `conductor -> controller -> Godot`
+- Python controller には `config/comm/pdu_def.json` を渡す
+- `endpoint_shm_with_pdu.json` は Godot endpoint 用であり、Python controller には渡さない
+- `bash tools/run_core_pro_conductor.sh` と `bash tools/run_core_pro_two_asset_controller.sh` は単独起動補助として使える
+
+physics 同期フラグ切り替え:
+
+```bash
+# 端末3 の Godot 起動だけを切り替える
+HAKO_ENABLE_PHYSICS_TIME_SYNC=0 /Applications/Godot_mono.app/Contents/MacOS/Godot --headless --path /Users/tmori/project/oss/hakoniwa-godot/examples/core_pro_two_asset
+HAKO_ENABLE_PHYSICS_TIME_SYNC=1 /Applications/Godot_mono.app/Contents/MacOS/Godot --headless --path /Users/tmori/project/oss/hakoniwa-godot/examples/core_pro_two_asset
+```
+
+GUI で確認する場合:
+
+```bash
+/Applications/Godot_mono.app/Contents/MacOS/Godot --path /Users/tmori/project/oss/hakoniwa-godot/examples/core_pro_two_asset
+```
+
+補足:
+
+- `core_pro_two_asset` は conductor に加えて Python controller が必要
+- 2026-04-16 時点では、3 端末で順に起動する手順のみを安定手順とする
 
 確認項目:
 
@@ -184,6 +284,10 @@
 - blocked 中は recv event を出していないことを debug log で確認できる
 - 再開後に step が再び進むことを確認できる
 
+切り替え方法:
+
+- 環境変数 `HAKO_ENABLE_PHYSICS_TIME_SYNC=1` を付けて実行する
+
 期待ログ:
 
 - `HAKO_TWO_ASSET_START_FEEDBACK_OK`
@@ -202,6 +306,12 @@
 - `enable_physics_time_sync = true`
 - `delta_time_usec` を physics `ΔT` と一致させる
 
+実行コマンド:
+
+```bash
+GODOT --path <physics-sync-test-project>
+```
+
 目的:
 
 - 既存 example だけでは見えにくい pause/backend の基本成立性確認
@@ -215,6 +325,10 @@
 5. world time が追いついたら再開する
 6. `get_configured_delta_time_usec()` が期待値を返す
 
+確認の目安:
+
+- Godot デフォルト設定なら `16667` usec
+
 ### 手順 D: UI 非ブロック確認
 
 対象:
@@ -226,6 +340,12 @@
 - `HakoniwaSimNode`
 - `process_mode = Always` の UI / monitor node
 - blocked 状態を可視化するラベルやログ
+
+実行コマンド:
+
+```bash
+GODOT --path <physics-sync-ui-test-project>
+```
 
 確認項目:
 
@@ -270,6 +390,14 @@
 - `true` で期待した制御ルートを通っているか
 
 後者は debug log を積極的に利用して確認する。
+
+debug log を入れる候補:
+
+- `initialize()` 時の `delta_time_usec`
+- `SYNC_STATE_RUNNING`
+- `SYNC_STATE_BLOCKED_BY_WORLD_TIME`
+- pause backend の停止 / 再開
+- `simulation_step(simtime, world_time)` 発火点
 
 問題が見つかった場合は、
 

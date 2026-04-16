@@ -11,6 +11,10 @@ var _completed := false
 var _latest_motor := {}
 var _motor_subscription_id := -1
 
+func _env_flag(name: String) -> bool:
+	var value := OS.get_environment(name).strip_edges().to_lower()
+	return value in ["1", "true", "yes", "on"]
+
 func _ready() -> void:
 	print("HAKO_TWO_ASSET_BOOT")
 
@@ -31,7 +35,8 @@ func _ready() -> void:
 	add_child(_sim)
 	_sim.asset_name = "godot_core_pro_plant"
 	_sim.delta_time_usec = 20000
-	_sim.enable_physics_time_sync = false
+	_sim.enable_physics_time_sync = _env_flag("HAKO_ENABLE_PHYSICS_TIME_SYNC")
+	_sim.debug_time_sync_logs = _env_flag("HAKO_DEBUG_TIME_SYNC_LOGS")
 	_sim.use_internal_shm_endpoint = true
 	_sim.shm_endpoint_config_path = "res://config/endpoint_shm_with_pdu.json"
 	_sim.simulation_started.connect(_on_simulation_started)

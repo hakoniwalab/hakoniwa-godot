@@ -7,8 +7,16 @@ var _completed := false
 var _pending_reset_request := false
 var _pending_restart_request := false
 var _post_restart_step_count := 0
-const POST_RESTART_STEP_TARGET := 3
 
+func _env_flag(name: String) -> bool:
+	var value := OS.get_environment(name).strip_edges().to_lower()
+	return value in ["1", "true", "yes", "on"]
+
+func _env_int(name: String, default_value: int) -> int:
+	var value := OS.get_environment(name).strip_edges()
+	if value.is_empty():
+		return default_value
+	return int(value)
 
 func _ready() -> void:
 	print("HAKO_CORE_SMOKE_BOOT")
@@ -60,7 +68,8 @@ func _ready() -> void:
 
 	_sim.asset_name = "godot_core_pro_smoke"
 	_sim.delta_time_usec = 20000
-	_sim.enable_physics_time_sync = false
+	_sim.enable_physics_time_sync = _env_flag("HAKO_ENABLE_PHYSICS_TIME_SYNC")
+	_sim.debug_time_sync_logs = _env_flag("HAKO_DEBUG_TIME_SYNC_LOGS")
 	_sim.simulation_started.connect(_on_simulation_started)
 	_sim.simulation_stopped.connect(_on_simulation_stopped)
 	_sim.simulation_reset.connect(_on_simulation_reset)
@@ -128,12 +137,13 @@ func _on_simulation_step(_simtime_usec: int, world_time_usec: int) -> void:
 		return
 	if _restart_pending:
 		_post_restart_step_count += 1
+		var post_restart_step_target := _env_int("HAKO_SMOKE_STEP_TARGET", 3)
 		print("HAKO_CORE_SMOKE_STEP:%d simtime=%d world=%d" % [
 			_post_restart_step_count,
 			_sim.get_simtime_usec(),
 			world_time_usec
 		])
-		if _post_restart_step_count >= POST_RESTART_STEP_TARGET:
+		if _post_restart_step_count >= post_restart_step_target:
 			_completed = true
 			print("HAKO_CORE_SMOKE_OK")
 			get_tree().quit(0)
