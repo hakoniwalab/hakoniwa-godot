@@ -77,6 +77,29 @@ HAKO_ENABLE_PHYSICS_TIME_SYNC=1 HAKO_DEBUG_TIME_SYNC_LOGS=1 /Applications/Godot_
 
 ---
 
+## 🖥️ Supported Platforms
+
+現在のサポート状況:
+
+- `macOS arm64`
+  - build / example / artifact 手順を最も確認している基準 platform
+- `Linux x86_64`
+  - artifact 導線あり
+  - ただし `macOS arm64` ほど回帰確認は厚くない
+- `Windows x86_64`
+  - artifact 導線あり
+  - ただし `macOS arm64` ほど回帰確認は厚くない
+
+ビルドの基本構成は共通だが、artifact 作成手順と生成される shared library は OS ごとに異なる。
+
+- `macOS`: `.dylib`
+- `Linux`: `.so`
+- `Windows`: `.dll`
+
+詳細な導入・artifact 手順は [docs/installation.md](/Users/tmori/project/oss/hakoniwa-godot/docs/installation.md:1) を参照。
+
+---
+
 現在の到達点、配布モデル、common codecs は [docs/current_status.md](/Users/tmori/project/oss/hakoniwa-godot/docs/current_status.md:1) を参照。
 
 ---
