@@ -8,6 +8,7 @@
 - `pdu_endpoint_design.md`: `hakoniwa-pdu-endpoint` 統合設計
 - `packaging_strategy.md`: Godot パッケージとしての配布方針
 - `installation.md`: 一般利用者向け導入手順
+- `developer_build.md`: 開発者向け build / release / artifact 手順
 - `api_overview.md`: API の入口と考え方
 - `api_reference.md`: API 仕様
 - `api_sequences.md`: API の利用順序

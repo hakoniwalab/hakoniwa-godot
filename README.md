@@ -135,7 +135,8 @@ HAKO_ENABLE_PHYSICS_TIME_SYNC=1 HAKO_DEBUG_TIME_SYNC_LOGS=1 <GODOT_BIN> --headle
 - `Linux`: `.so`
 - `Windows`: `.dll`
 
-詳細な導入・artifact 手順は [docs/installation.md](docs/installation.md) を参照。
+利用者向けの導入手順は [docs/installation.md](docs/installation.md) を参照。
+ソースからの build / release / artifact 作成は [docs/developer_build.md](docs/developer_build.md) を参照。
 
 ---
 
@@ -367,6 +368,7 @@ codec smoke test:
 詳細:
 
 - [installation.md](docs/installation.md)
+- [developer_build.md](docs/developer_build.md)
 - [api_overview.md](docs/api_overview.md)
 - [troubleshooting.md](docs/troubleshooting.md)
 
