@@ -7,6 +7,45 @@
 
 ---
 
+## ⚡ 30秒で分かる
+
+箱庭（Hakoniwa）は、**複数のプログラムを同じ時刻で動かすための分散シミュレーション基盤**です。  
+`hakoniwa-godot` は、**Godot をその参加者の 1 つにする addon** です。
+
+これにより、例えば次のような使い方ができます。
+
+- ロボットやドローンの状態を Godot 上で可視化する
+- Godot の物理エンジンを箱庭時刻と同期させて動かす
+- Python や他の asset と PDU でデータをやり取りする
+- UI / 3D 表示 / センサ表現を Godot 側で担当する
+
+---
+
+## 🚀 5分で動かす
+
+まずは最小サンプルを動かして、Godot addon がロードされることを確認します。
+
+```bash
+git clone --recursive https://github.com/hakoniwalab/hakoniwa-godot.git
+cd hakoniwa-godot
+cmake --preset default
+cmake --build --preset default
+bash tools/message_addon_tool.sh sync --packages all
+<GODOT_BIN> --headless --path examples/basic_subscriber --quit
+```
+
+成功すると、最後に `HAKONIWA_CODEC_SMOKE_OK` が出ます。
+
+複数 codec を使う example を動かす場合は、先にこれを実行してください。
+
+```bash
+bash tools/build_all_codecs.sh
+```
+
+その後に `core_pro_smoke` や `core_pro_two_asset` を試すのが自然です。
+
+---
+
 ## 🎯 Target Users
 
 * ロボット / ドローン研究者
@@ -56,13 +95,13 @@ Godot のフレームループとの連携指針:
 headless 実行や比較実験では、環境変数でも切り替えできる。
 
 ```bash
-HAKO_ENABLE_PHYSICS_TIME_SYNC=1 HAKO_DEBUG_TIME_SYNC_LOGS=1 /Applications/Godot_mono.app/Contents/MacOS/Godot --headless --path examples/core_pro_two_asset
+HAKO_ENABLE_PHYSICS_TIME_SYNC=1 HAKO_DEBUG_TIME_SYNC_LOGS=1 <GODOT_BIN> --headless --path examples/core_pro_two_asset
 ```
 
 詳細仕様:
 
-- [docs/physics_time_sync_strategy.md](/Users/tmori/project/oss/hakoniwa-godot/docs/physics_time_sync_strategy.md:1)
-- [docs/physics_time_sync_impl.md](/Users/tmori/project/oss/hakoniwa-godot/docs/physics_time_sync_impl.md:1)
+- [docs/physics_time_sync_strategy.md](docs/physics_time_sync_strategy.md)
+- [docs/physics_time_sync_impl.md](docs/physics_time_sync_impl.md)
 
 ---
 
@@ -96,21 +135,23 @@ HAKO_ENABLE_PHYSICS_TIME_SYNC=1 HAKO_DEBUG_TIME_SYNC_LOGS=1 /Applications/Godot_
 - `Linux`: `.so`
 - `Windows`: `.dll`
 
-詳細な導入・artifact 手順は [docs/installation.md](/Users/tmori/project/oss/hakoniwa-godot/docs/installation.md:1) を参照。
+詳細な導入・artifact 手順は [docs/installation.md](docs/installation.md) を参照。
 
 ---
 
-現在の到達点、配布モデル、common codecs は [docs/current_status.md](/Users/tmori/project/oss/hakoniwa-godot/docs/current_status.md:1) を参照。
+現在の到達点、配布モデル、common codecs は [docs/current_status.md](docs/current_status.md) を参照。
 
 ---
 
-## 🚀 Quick Start
+## 🔧 Build And Run
 
 ### Prerequisites
 
-* Godot `4.6.1` (mono) on macOS arm64
+* Godot `4.6.1` (mono)
 * CMake `>= 3.21`
 * submodule 含む clone (`--recursive`)
+
+5 分で試すだけなら、上の [5分で動かす](#-5分で動かす) を先に見ること。
 
 ---
 
@@ -202,13 +243,13 @@ cd examples/core_pro_two_asset
 python python_controller.py config/comm/pdu_def.json
 
 # terminal 3
-/Applications/Godot_mono.app/Contents/MacOS/Godot --headless --path /Users/tmori/project/oss/hakoniwa-godot/examples/core_pro_two_asset
+<GODOT_BIN> --headless --path examples/core_pro_two_asset
 ```
 
 physics 同期確認時は terminal 3 の Godot 起動に環境変数を付ける:
 
 ```bash
-HAKO_ENABLE_PHYSICS_TIME_SYNC=1 HAKO_DEBUG_TIME_SYNC_LOGS=1 /Applications/Godot_mono.app/Contents/MacOS/Godot --headless --path /Users/tmori/project/oss/hakoniwa-godot/examples/core_pro_two_asset
+HAKO_ENABLE_PHYSICS_TIME_SYNC=1 HAKO_DEBUG_TIME_SYNC_LOGS=1 <GODOT_BIN> --headless --path examples/core_pro_two_asset
 ```
 
 Python controller には `config/comm/pdu_def.json` を渡すこと。`endpoint_shm_with_pdu.json` は Godot endpoint 用設定であり、Python 側には使わない。
@@ -246,8 +287,7 @@ dist/hakoniwa-godot-macos-arm64.tar.gz
 ### 3. Run Example
 
 ```bash
-# macOS arm64 環境での実行例
-/Applications/Godot_mono.app/Contents/MacOS/Godot --path examples/basic_subscriber
+<GODOT_BIN> --path examples/basic_subscriber
 ```
 
 ---
@@ -255,10 +295,7 @@ dist/hakoniwa-godot-macos-arm64.tar.gz
 ### 4. Verify
 
 ```bash
-cmake --preset default
-cmake --build --preset default
-bash tools/message_addon_tool.sh sync --packages all
-/Applications/Godot_mono.app/Contents/MacOS/Godot --headless --path examples/basic_subscriber --quit
+<GODOT_BIN> --headless --path examples/basic_subscriber --quit
 ctest --preset default
 ```
 
@@ -314,19 +351,24 @@ codec smoke test:
 
 ## Notes
 
-- 通常利用では `HakoniwaSimNode` または `HakoniwaEndpointNode` を使う
+通常利用:
+
+- `HakoniwaSimNode` または `HakoniwaEndpointNode` を使う
 - codec plugin path は `res://addons/hakoniwa/codecs/<package>_codec` のように拡張子なしを推奨する
-- `HakoniwaCodecRegistry` を直接使うのは low-level 利用とし、codec の `.gdextension` 初期化順を理解している場合に限る
 - `HakoniwaEndpointNode` は low-level pull API と ROS 風 subscription API の両方を持つ
 - high-level subscription API を使う場合、対象 endpoint JSON の entry で `notify_on_recv: true` が必要
 - `addons/hakoniwa_msgs` は platform 非依存なので、Windows でも追加対応は基本不要
+
+上級者向け:
+
+- `HakoniwaCodecRegistry` を直接使うのは low-level 利用とし、codec の `.gdextension` 初期化順を理解している場合に限る
 - codec plugin の `.gdextension` は Windows `.dll` entry を持つが、Windows 実機での build / load 確認はまだしていない
 
 詳細:
 
-- [installation.md](/Users/tmori/project/oss/hakoniwa-godot/docs/installation.md)
-- [api_overview.md](/Users/tmori/project/oss/hakoniwa-godot/docs/api_overview.md)
-- [troubleshooting.md](/Users/tmori/project/oss/hakoniwa-godot/docs/troubleshooting.md)
+- [installation.md](docs/installation.md)
+- [api_overview.md](docs/api_overview.md)
+- [troubleshooting.md](docs/troubleshooting.md)
 
 ---
 
