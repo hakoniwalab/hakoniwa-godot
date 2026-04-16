@@ -44,6 +44,28 @@ Godot のフレームループとの連携指針:
 
 ---
 
+## ⏱️ Physics Time Sync
+
+`HakoniwaSimNode` は、Hakoniwa world time と Godot physics time の同期をオプションで有効化できます。
+
+- 通常利用では、`HakoniwaSimNode` をシーンに配置し、Inspector で `enable_physics_time_sync` を設定する
+- `auto_sync_delta_time_with_physics` が有効な場合、`delta_time_usec` は Godot の physics `ΔT` から自動計算される
+- world time が不足している場合、asset step は `BLOCKED_BY_WORLD_TIME` に入り、条件が揃うと再開する
+- UI を停止させたくないノードは `process_mode = Always` を明示設定する
+
+headless 実行や比較実験では、環境変数でも切り替えできる。
+
+```bash
+HAKO_ENABLE_PHYSICS_TIME_SYNC=1 HAKO_DEBUG_TIME_SYNC_LOGS=1 /Applications/Godot_mono.app/Contents/MacOS/Godot --headless --path examples/core_pro_two_asset
+```
+
+詳細仕様:
+
+- [docs/physics_time_sync_strategy.md](/Users/tmori/project/oss/hakoniwa-godot/docs/physics_time_sync_strategy.md:1)
+- [docs/physics_time_sync_impl.md](/Users/tmori/project/oss/hakoniwa-godot/docs/physics_time_sync_impl.md:1)
+
+---
+
 ## ✅ Current Status
 
 > 現在のマイルストーン: **`HakoniwaSimNode + internal SHM endpoint + Python controller` による 2 asset 時刻同期・typed PDU 通信まで**
@@ -165,13 +187,34 @@ cmake -S . -B build -DHAKONIWA_GODOT_CODEC_PACKAGES="hako_msgs;std_msgs;geometry
 cmake --build build -j4
 ```
 
+全 codec を明示指定する場合:
+
+```bash
+cmake -S . -B build -DHAKONIWA_GODOT_CODEC_PACKAGES="all"
+cmake --build build -j4
+```
+
 補助ツール:
+
+- `tools/codec_plugin_tool.sh`
+  - codec plugin の configure / build / test / 出力先確認を行う
+- `tools/message_addon_tool.sh`
+  - generated GDScript message class を `addons/hakoniwa_msgs` へ同期する
+- `tools/build_all_codecs.sh`
+  - 全 codec の configure / build / message addon 同期を一括実行する
+- `tools/run_core_pro_conductor.sh`
+  - `hakoniwa-core-pro` conductor を単独起動する
+- `tools/run_core_pro_two_asset_controller.sh`
+  - `core_pro_two_asset` 用 Python controller を単独起動する
 
 ```bash
 bash tools/codec_plugin_tool.sh list
 bash tools/codec_plugin_tool.sh configure --packages "hako_msgs;std_msgs"
+bash tools/codec_plugin_tool.sh configure --packages all
 bash tools/codec_plugin_tool.sh build --target hako_msgs_codec
+bash tools/codec_plugin_tool.sh build
 bash tools/codec_plugin_tool.sh test
+bash tools/message_addon_tool.sh sync --packages \"hako_msgs;std_msgs\"
 bash tools/message_addon_tool.sh sync --packages all
 ```
 
@@ -188,6 +231,7 @@ bash tools/build_all_codecs.sh
 - `tools/message_addon_tool.sh sync --packages all`
 
 `core_pro_two_asset` のように複数 codec を前提にする example を動かす前には、この一括実行を推奨する。
+特に不足 codec の `.gdextension` load error を避けたい場合は、`all` で揃えるのが一番確実である。
 
 `core_pro_two_asset` の既知の安定起動手順:
 
