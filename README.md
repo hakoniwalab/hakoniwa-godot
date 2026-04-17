@@ -31,7 +31,7 @@ cd hakoniwa-godot
 cmake --preset default
 cmake --build --preset default
 bash tools/message_addon_tool.sh sync --packages all
-<GODOT_BIN> --headless --path examples/basic_subscriber --quit
+<GODOT_BIN> --headless --path tests/smoke/basic_subscriber --quit
 ```
 
 成功すると、最後に `HAKONIWA_CODEC_SMOKE_OK` が出ます。
@@ -42,7 +42,7 @@ bash tools/message_addon_tool.sh sync --packages all
 bash tools/build_all_codecs.sh
 ```
 
-その後に `core_pro_smoke` や `core_pro_two_asset` を試すのが自然です。
+その後に `tests/smoke/core_pro_smoke` や `tests/integration/core_pro_two_asset` を試すのが自然です。
 
 ---
 
@@ -51,6 +51,23 @@ bash tools/build_all_codecs.sh
 * ロボット / ドローン研究者
 * シミュレーション開発者
 * Godot ユーザーで外部システムと連携したい人
+
+---
+
+## 📁 Repository Roles
+
+このリポジトリでは、利用者向けの導線と検証用プロジェクトを分けます。
+
+- `examples/`
+  - 利用者が真似するための最小例
+- `tests/smoke/`
+  - 単機能の健全性確認
+  - 破損の早期検出を目的とする軽量な確認
+- `tests/integration/`
+  - 複数機能をまたぐ統合確認
+  - 外部プロセスや起動順を含めた成立性を確認する
+
+この分離により、利用者は `examples/` だけを追えばよく、開発者は `smoke` と `integration` を分けて回帰確認できます。
 
 ---
 
@@ -95,7 +112,7 @@ Godot のフレームループとの連携指針:
 headless 実行や比較実験では、環境変数でも切り替えできる。
 
 ```bash
-HAKO_ENABLE_PHYSICS_TIME_SYNC=1 HAKO_DEBUG_TIME_SYNC_LOGS=1 <GODOT_BIN> --headless --path examples/core_pro_two_asset
+HAKO_ENABLE_PHYSICS_TIME_SYNC=1 HAKO_DEBUG_TIME_SYNC_LOGS=1 <GODOT_BIN> --headless --path tests/integration/core_pro_two_asset
 ```
 
 詳細仕様:
@@ -135,6 +152,7 @@ HAKO_ENABLE_PHYSICS_TIME_SYNC=1 HAKO_DEBUG_TIME_SYNC_LOGS=1 <GODOT_BIN> --headle
 - `Linux`: `.so`
 - `Windows`: `.dll`
 
+最短で動かす手順は [docs/quick_start.md](docs/quick_start.md) を参照。
 利用者向けの導入手順は [docs/installation.md](docs/installation.md) を参照。
 ソースからの build / release / artifact 作成は [docs/developer_build.md](docs/developer_build.md) を参照。
 
@@ -205,7 +223,7 @@ cmake --build build -j4
 - `tools/run_core_pro_conductor.sh`
   - `hakoniwa-core-pro` conductor を単独起動する
 - `tools/run_core_pro_two_asset_controller.sh`
-  - `core_pro_two_asset` 用 Python controller を単独起動する
+  - `tests/integration/core_pro_two_asset` 用 Python controller を単独起動する
 
 ```bash
 bash tools/codec_plugin_tool.sh list
@@ -230,27 +248,49 @@ bash tools/build_all_codecs.sh
 - `tools/codec_plugin_tool.sh build`
 - `tools/message_addon_tool.sh sync --packages all`
 
-`core_pro_two_asset` のように複数 codec を前提にする example を動かす前には、この一括実行を推奨する。
+`tests/integration/core_pro_two_asset` のように複数 codec を前提にする integration test を動かす前には、この一括実行を推奨する。
 特に不足 codec の `.gdextension` load error を避けたい場合は、`all` で揃えるのが一番確実である。
 
-`core_pro_two_asset` の既知の安定起動手順:
+`HakoniwaSimNode + Python` の最小 PDU 連携を試す場合は、`std_msgs` だけあれば十分です。
+
+```bash
+cmake -S . -B build -DHAKONIWA_GODOT_CODEC_PACKAGES="std_msgs"
+cmake --build build -j4
+```
+
+`python_pdu_minimal` の既知の安定起動手順:
 
 ```bash
 # terminal 1
 bash tools/run_core_pro_conductor.sh
 
 # terminal 2
-cd examples/core_pro_two_asset
+bash tools/run_python_pdu_minimal_controller.sh
+
+# terminal 3
+<GODOT_BIN> --headless --path examples/python_pdu_minimal
+```
+
+この example は `std_msgs/UInt64` を双方向に 1 本ずつ流す最小構成です。詳細は `examples/python_pdu_minimal/README.md` を参照してください。
+
+`tests/integration/core_pro_two_asset` の既知の安定起動手順:
+
+```bash
+# terminal 1
+bash tools/run_core_pro_conductor.sh
+
+# terminal 2
+cd tests/integration/core_pro_two_asset
 python python_controller.py config/comm/pdu_def.json
 
 # terminal 3
-<GODOT_BIN> --headless --path examples/core_pro_two_asset
+<GODOT_BIN> --headless --path tests/integration/core_pro_two_asset
 ```
 
 physics 同期確認時は terminal 3 の Godot 起動に環境変数を付ける:
 
 ```bash
-HAKO_ENABLE_PHYSICS_TIME_SYNC=1 HAKO_DEBUG_TIME_SYNC_LOGS=1 <GODOT_BIN> --headless --path examples/core_pro_two_asset
+HAKO_ENABLE_PHYSICS_TIME_SYNC=1 HAKO_DEBUG_TIME_SYNC_LOGS=1 <GODOT_BIN> --headless --path tests/integration/core_pro_two_asset
 ```
 
 Python controller には `config/comm/pdu_def.json` を渡すこと。`endpoint_shm_with_pdu.json` は Godot endpoint 用設定であり、Python 側には使わない。
@@ -288,7 +328,7 @@ dist/hakoniwa-godot-macos-arm64.tar.gz
 ### 3. Run Example
 
 ```bash
-<GODOT_BIN> --path examples/basic_subscriber
+<GODOT_BIN> --path tests/smoke/basic_subscriber
 ```
 
 ---
@@ -296,7 +336,7 @@ dist/hakoniwa-godot-macos-arm64.tar.gz
 ### 4. Verify
 
 ```bash
-<GODOT_BIN> --headless --path examples/basic_subscriber --quit
+<GODOT_BIN> --headless --path tests/smoke/basic_subscriber --quit
 ctest --preset default
 ```
 

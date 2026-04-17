@@ -1,5 +1,109 @@
 # Issue
 
+## Current Issue: Conductor Reset Fails Without PDU Attach
+
+### 症状
+
+`HakoniwaSimNode` から見ると、`reset -> start` 後に `simtime` は 0 近傍へ戻る一方で、`world_time` が古い値のまま残ることがあった。
+
+例:
+
+```text
+simulation started
+step simtime=16667 world=8660000
+step simtime=33334 world=8660000
+```
+
+さらに切り分けを進めると、conductor プロセスが `reset` 後に `SIGSEGV` で落ちるケースがあった。
+
+### 再現条件
+
+- conductor を別プロセスで起動する
+- `start()` は別プロセスから発行する
+- `FIX_PDU_CREATE_TIMING=TRUE`
+- conductor 側が PDU shared memory 実体を未 attach のまま `reset` を処理する
+
+### 原因
+
+原因は 2 つ重なっていた。
+
+#### 1. conductor 側が PDU data を attach していなかった
+
+core 側の `HakoPduData::reset()` が、`pdu_ == nullptr` の可能性を考慮せずに `memset(this->pdu_, ...)` を実行していた。
+
+参照:
+
+- [hako_pdu_data.hpp](third_party/hakoniwa-core-pro/hakoniwa-core-cpp/src/hako/data/hako_pdu_data.hpp)
+- [hako_master_impl.cpp](third_party/hakoniwa-core-pro/hakoniwa-core-cpp/src/hako/hako_master_impl.cpp)
+- [hako_master_data.hpp](third_party/hakoniwa-core-pro/hakoniwa-core-cpp/src/hako/data/hako_master_data.hpp)
+
+今回の前提では、
+
+1. `start()` は別プロセスから発行される
+2. `FIX_PDU_CREATE_TIMING=TRUE` のため、PDU data は start event publish 時に作成される
+3. しかし conductor プロセス自身は、その PDU data を自動では attach/load していなかった
+4. その状態で reset を踏むと、`pdu_ == nullptr` のまま reset 処理へ入りうる
+
+#### 2. reset 時に asset の `ctime` をクリアしていなかった
+
+reset 完了時に 0 へ戻していたのは
+
+- `timeset.current`
+- `TheWorld::world_time_usec_`
+
+だけで、各 asset の `assets_ev[i].ctime` は reset 前の値を保持していた。
+
+その結果、
+
+- local simtime は 0 に戻る
+- しかし master が参照する asset time (`ctime`) は stale
+- `max_delay` 判定と restart 後の world time 進行が不自然になる
+
+という問題が発生していた。
+
+### 修正方針
+
+#### 1. crash 回避
+
+`HakoPduData::reset()` に `pdu_ == nullptr` ガードを入れ、PDU buffer が無い場合は `INFO` を出して reset を skip する。
+
+#### 2. attach タイミングの補正
+
+conductor 側 `execute()` で `Runnable -> Running` へ遷移した瞬間に、PDU data を `load(false)` して attach する。
+
+このタイミングなら:
+
+- start event により PDU data は作成済み
+- conductor 側は reset より前に PDU 実体を掴める
+
+### 実施済み対応
+
+- `HakoPduData::reset()` に null guard を追加
+- `HakoMasterControllerImpl::execute()` の `Runnable -> Running` 遷移で `get_pdu_data()->load(false)` を追加
+- `HakoMasterControllerImpl::execute()` の `Resetting -> Stopped` 遷移で、全 asset の `assets_ev[i].ctime = 0` を追加
+
+### ログ確認ポイント
+
+正常系では、reset 後の最初の step で `world_time` が小さい値から再開する。
+
+例:
+
+```text
+simulation started
+step simtime=16667 world=20000
+step simtime=33334 world=37000
+```
+
+### 現時点の結論
+
+- `world_time` API 自体は正しい
+- `HakoniwaSimNode` の signal 設計が主因ではない
+- 本質原因は次の 2 点だった
+  - **conductor プロセスが PDU data を attach していない状態で reset を処理していたこと**
+  - **reset 時に asset `ctime` を 0 へ戻していなかったこと**
+
+---
+
 ## 背景
 
 このプロジェクトの目的は、`hakoniwa-godot` を Godot 用パッケージとして整備し、第三者が導入して使える形まで持っていくことです。

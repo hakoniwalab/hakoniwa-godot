@@ -4,6 +4,7 @@
 
 ## 役割
 
+- `quick_start.md`: 最短で `HakoniwaSimNode` を起動する手順
 - `architecture.md`: リポジトリ全体の構成方針
 - `pdu_endpoint_design.md`: `hakoniwa-pdu-endpoint` 統合設計
 - `packaging_strategy.md`: Godot パッケージとしての配布方針

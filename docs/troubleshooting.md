@@ -76,7 +76,7 @@ codecs.load_plugin("res://addons/hakoniwa/codecs/geometry_msgs_codec")
 - `addons/hakoniwa/codecs/<package>_codec.gdextension`
 
 5. 必要なら `addons/hakoniwa_msgs/<package>/*.gd` を `tools/message_addon_tool.sh sync --packages "<package>"` で同期する
-6. まず `examples/basic_subscriber` 相当の endpoint-only test で encode / decode を確認する
+6. まず `tests/smoke/basic_subscriber` 相当の endpoint-only smoke test で encode / decode を確認する
 7. その後 `HakoniwaSimNode` や `hakoniwa-core-pro` 統合へ進む
 
 重要なのは、いきなり `core-pro` 統合へ持ち込まず、

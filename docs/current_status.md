@@ -20,7 +20,7 @@
 - typed endpoint で単純型、複雑型、可変長配列の動作確認
 - `HakoniwaSimNode` による `hakoniwa-core-pro` polling asset 統合
 - start / stop / reset / restart lifecycle smoke に成功
-- `simtime == world_time` の `core_pro_smoke` に成功
+- `simtime == world_time` の `tests/smoke/core_pro_smoke` に成功
 - `HakoniwaSimNode + internal SHM endpoint + Python controller` の 2 asset smoke に成功
 - `geometry_msgs/Twist` の `motor` / `pos` で typed PDU 相互通信に成功
 - `HakoniwaEndpointNode` に low-level pull API と ROS 風 subscription API を実装

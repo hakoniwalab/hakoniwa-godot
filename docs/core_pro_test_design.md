@@ -89,7 +89,7 @@
 初期 skeleton としては以下を置く。
 
 - runner: `tools/run_core_pro_smoke.sh`
-- Godot test scene: `examples/core_pro_smoke/`
+- Godot test scene: `tests/smoke/core_pro_smoke/`
 
 ## 初期の最小テスト構成
 

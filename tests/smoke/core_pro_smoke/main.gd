@@ -27,8 +27,8 @@ func _ready() -> void:
 		get_tree().quit(2)
 		return
 
-	var sim_node_script_path := _get_repo_file_path("addons/hakoniwa/scripts/hakoniwa_simulation_node.gd")
-	var callbacks_script_path := _get_repo_file_path("examples/core_pro_smoke/smoke_callbacks.gd")
+	var sim_node_script_path := "res://addons/hakoniwa/scripts/hakoniwa_simulation_node.gd"
+	var callbacks_script_path := "res://smoke_callbacks.gd"
 
 	if not FileAccess.file_exists(sim_node_script_path):
 		print("HAKO_CORE_SMOKE_PENDING_MISSING_SIMNODE")
@@ -155,7 +155,3 @@ func _on_simulation_step(_simtime_usec: int, world_time_usec: int) -> void:
 			print("HAKO_CORE_SMOKE_REQUEST_STOP_FAILED")
 			print(_sim.get_last_error_text())
 			get_tree().quit(2)
-
-func _get_repo_file_path(relative_path: String) -> String:
-	var example_root := ProjectSettings.globalize_path("res://")
-	return example_root.path_join("..").path_join("..").path_join(relative_path).simplify_path()

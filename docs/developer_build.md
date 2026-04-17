@@ -68,14 +68,14 @@ bash tools/message_addon_tool.sh sync --packages all
 bash tools/build_all_codecs.sh
 ```
 
-`core_pro_two_asset` のように複数 codec を使う example の前には、`all` で揃えるのが一番確実です。
+`tests/integration/core_pro_two_asset` のように複数 codec を使う integration test の前には、`all` で揃えるのが一番確実です。
 
 ## 既知の単独起動補助
 
 - `tools/run_core_pro_conductor.sh`
   - conductor 単独起動
 - `tools/run_core_pro_two_asset_controller.sh`
-  - `core_pro_two_asset` 用 Python controller 単独起動
+  - `tests/integration/core_pro_two_asset` 用 Python controller 単独起動
 
 ## addon artifact 作成
 

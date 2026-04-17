@@ -2,7 +2,7 @@
 
 ## 目的
 
-[physics_time_sync_strategy.md](/Users/tmori/project/oss/hakoniwa-godot/docs/physics_time_sync_strategy.md:1) で定めた方針を、`HakoniwaSimNode` の実装へ落とす。
+[physics_time_sync_strategy.md](physics_time_sync_strategy.md) で定めた方針を、`HakoniwaSimNode` の実装へ落とす。
 
 この文書は、初期実装のための実装設計メモである。
 
@@ -430,15 +430,15 @@ event check
 
 実装後は以下を更新対象にする。
 
-- [physics_time_sync_strategy.md](/Users/tmori/project/oss/hakoniwa-godot/docs/physics_time_sync_strategy.md:1)
-- [issue-physics.md](/Users/tmori/project/oss/hakoniwa-godot/issue-physics.md:1)
-- [task.md](/Users/tmori/project/oss/hakoniwa-godot/task.md:1)
+- [physics_time_sync_strategy.md](physics_time_sync_strategy.md)
+- [../issue-physics.md](../issue-physics.md)
+- [../task.md](../task.md)
 - `README.md`
 - `docs/api_overview.md`
 - `docs/api_reference.md`
 
 ## 関連
 
-- [physics_time_sync_strategy.md](/Users/tmori/project/oss/hakoniwa-godot/docs/physics_time_sync_strategy.md:1)
-- [issue-physics.md](/Users/tmori/project/oss/hakoniwa-godot/issue-physics.md:1)
-- [addons/hakoniwa/scripts/hakoniwa_simulation_node.gd](/Users/tmori/project/oss/hakoniwa-godot/addons/hakoniwa/scripts/hakoniwa_simulation_node.gd:1)
+- [physics_time_sync_strategy.md](physics_time_sync_strategy.md)
+- [../issue-physics.md](../issue-physics.md)
+- `addons/hakoniwa/scripts/hakoniwa_simulation_node.gd`

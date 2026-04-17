@@ -10,7 +10,7 @@ endif()
 
 add_test(
   NAME hakoniwa_codec_smoke
-  COMMAND "${HAKONIWA_GODOT_EXECUTABLE}" --headless --path "${CMAKE_SOURCE_DIR}/examples/basic_subscriber" --quit
+  COMMAND "${HAKONIWA_GODOT_EXECUTABLE}" --headless --path "${CMAKE_SOURCE_DIR}/tests/smoke/basic_subscriber" --quit
 )
 
 set_tests_properties(

@@ -33,6 +33,9 @@ const SYNC_STATE_TERMINATED := 6
 @export var asset_name: String = ""
 @export var use_internal_shm_endpoint: bool = false
 @export var shm_endpoint_config_path: String = ""
+@export var internal_endpoint_codec_plugins: PackedStringArray = PackedStringArray([
+	"res://addons/hakoniwa/codecs/geometry_msgs_codec"
+])
 @export var delta_time_usec: int = 20000
 @export var auto_sync_delta_time_with_physics: bool = true
 @export var auto_initialize_on_ready: bool = false
@@ -296,6 +299,10 @@ func _tick_internal(allow_step: bool) -> bool:
 		_internal_endpoint.dispatch_recv_events()
 
 	_current_simtime_usec = next_simtime_usec
+	_debug_log("notify_simtime simtime=%d world_time=%d" % [
+		_current_simtime_usec,
+		world_time_usec
+	])
 	_core_asset.notify_simtime(_current_simtime_usec)
 	_update_error("tick.notify_simtime")
 	if not _last_error_text.is_empty():
@@ -304,6 +311,10 @@ func _tick_internal(allow_step: bool) -> bool:
 
 	if _callbacks != null and _callbacks.has_method("on_simulation_step"):
 		_callbacks.on_simulation_step(_current_simtime_usec, world_time_usec)
+	_debug_log("emit simulation_step simtime=%d world_time=%d" % [
+		_current_simtime_usec,
+		world_time_usec
+	])
 	simulation_step.emit(_current_simtime_usec, world_time_usec)
 	_debug_log("simulation_step simtime=%d world_time=%d" % [
 		_current_simtime_usec,
@@ -362,6 +373,7 @@ func _handle_reset_event() -> void:
 	_update_error("tick.reset_feedback_ok")
 	if reset_result == 0:
 		_current_simtime_usec = 0
+		_debug_log("reset feedback ok: local simtime reset to 0")
 		_sync_state = SYNC_STATE_RESETTING
 		simulation_reset.emit()
 	else:
@@ -435,9 +447,7 @@ func _ensure_internal_endpoint() -> bool:
 	_internal_endpoint.config_path = shm_endpoint_config_path
 	_internal_endpoint.endpoint_name = "%s_shm_endpoint" % asset_name
 	_internal_endpoint.direction = 2
-	_internal_endpoint.codec_plugins = PackedStringArray([
-		"res://addons/hakoniwa/codecs/geometry_msgs_codec"
-	])
+	_internal_endpoint.codec_plugins = internal_endpoint_codec_plugins
 	return true
 
 func _update_error(context: String) -> void:

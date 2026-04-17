@@ -250,7 +250,7 @@ M1 では以下を採用した。
 
 - 配布単位: `addons/hakoniwa`
 - ネイティブ実装: `native/`
-- 動作確認プロジェクト: `examples/basic_subscriber`
+- 動作確認プロジェクト: `tests/smoke/basic_subscriber`
 - 依存管理: `third_party/` の Git submodule
 
 ## 未決定事項

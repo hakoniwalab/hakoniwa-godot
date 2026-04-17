@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 DEFAULT_GODOT_BIN="/Applications/Godot_mono.app/Contents/MacOS/Godot"
-DEFAULT_EXAMPLE_DIR="${REPO_ROOT}/examples/core_pro_smoke"
+DEFAULT_EXAMPLE_DIR="${REPO_ROOT}/tests/smoke/core_pro_smoke"
 DEFAULT_CONDUCTOR_WAIT_SEC="1"
 DEFAULT_CONDUCTOR_DELTA_USEC="10000"
 DEFAULT_CONDUCTOR_MAX_DELAY_USEC="20000"
