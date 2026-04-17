@@ -33,8 +33,8 @@ const SYNC_STATE_TERMINATED := 6
 @export var asset_name: String = ""
 @export var use_internal_shm_endpoint: bool = false
 @export var shm_endpoint_config_path: String = ""
-@export var internal_endpoint_codec_plugins: PackedStringArray = PackedStringArray([
-	"res://addons/hakoniwa/codecs/geometry_msgs_codec"
+@export var internal_endpoint_codec_packages: PackedStringArray = PackedStringArray([
+	"geometry_msgs"
 ])
 @export var delta_time_usec: int = 20000
 @export var auto_sync_delta_time_with_physics: bool = true
@@ -53,6 +53,7 @@ var _sync_state: int = SYNC_STATE_UNINITIALIZED
 var _blocked_tree_pause_applied: bool = false
 var _last_blocked_next_simtime_usec: int = -1
 var _last_blocked_world_time_usec: int = -1
+var internal_endpoint_codec_plugins: PackedStringArray = PackedStringArray()
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -447,8 +448,26 @@ func _ensure_internal_endpoint() -> bool:
 	_internal_endpoint.config_path = shm_endpoint_config_path
 	_internal_endpoint.endpoint_name = "%s_shm_endpoint" % asset_name
 	_internal_endpoint.direction = 2
-	_internal_endpoint.codec_plugins = internal_endpoint_codec_plugins
+	_internal_endpoint.codec_plugins = _resolve_internal_endpoint_codec_plugins()
 	return true
+
+func _resolve_internal_endpoint_codec_plugins() -> PackedStringArray:
+	var resolved := PackedStringArray()
+	for package_name in internal_endpoint_codec_packages:
+		var trimmed := package_name.strip_edges()
+		if trimmed.is_empty():
+			continue
+		if trimmed.begins_with("res://"):
+			resolved.append(trimmed)
+			continue
+		resolved.append("res://addons/hakoniwa/codecs/%s_codec" % trimmed)
+	for plugin_path in internal_endpoint_codec_plugins:
+		var trimmed := plugin_path.strip_edges()
+		if trimmed.is_empty():
+			continue
+		if not resolved.has(trimmed):
+			resolved.append(trimmed)
+	return resolved
 
 func _update_error(context: String) -> void:
 	if _core_asset == null:

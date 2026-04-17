@@ -97,6 +97,10 @@ Godot Editor で対象プロジェクトを開き、次を確認します。
 - `shm_endpoint_config_path`
   - internal SHM endpoint の設定ファイル
   - `use_internal_shm_endpoint = true` のときに必要
+- `internal_endpoint_codec_packages`
+  - internal SHM endpoint が使う message package の一覧
+  - `use_internal_shm_endpoint = true` のときに、扱う message type に対応する package 名を入れる
+  - 例: `std_msgs`
 - `debug_time_sync_logs`
   - `true` にすると、`BLOCKED_BY_WORLD_TIME` や resume の debug log を出す
 
@@ -105,6 +109,8 @@ Godot Editor で対象プロジェクトを開き、次を確認します。
 - 通常利用では、`HakoniwaSimNode` は Inspector で設定して使う
 - headless 実験では、example 側で環境変数から上書きしている場合がある
 - `enable_physics_time_sync` を使う場合、UI を止めたくないノードは `process_mode = Always` を明示設定する
+- `internal_endpoint_codec_packages` は Inspector に表示されるが、実際に必要になるのは internal SHM endpoint を使う場合だけ
+- 入力するのは `res://...` の plugin path ではなく package 名
 
 ### 5. 利用側スクリプトを追加する
 
@@ -177,6 +183,14 @@ bash tools/run_python_pdu_minimal_controller.sh
 
 Python controller には `config/comm/pdu_def.json` を渡します。  
 Godot 側は `config/endpoint_shm_with_pdu.json` を internal endpoint 用に使います。
+
+Inspector で internal SHM endpoint を設定する場合は、`Internal Endpoint Codec Packages` に internal endpoint で使う message package を入れてください。
+
+例:
+
+```text
+std_msgs
+```
 
 ## integration test を試す場合
 

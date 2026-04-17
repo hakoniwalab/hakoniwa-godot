@@ -31,6 +31,26 @@ cmake --build build -j4
 bash tools/build_all_codecs.sh
 ```
 
+## Godot 側の internal endpoint 設定
+
+`Use Internal Shm Endpoint` を有効化する場合、`Internal Endpoint Codec Packages` に internal endpoint で使う package 名を設定します。
+
+この example では `std_msgs/UInt64` だけを使うので、設定値は次の 1 つです。
+
+```text
+std_msgs
+```
+
+コードで設定する場合の例:
+
+```gdscript
+_sim.internal_endpoint_codec_packages = PackedStringArray([
+	"std_msgs"
+])
+```
+
+複数の message type を internal endpoint で使う場合は、必要な package 名を配列に追加します。
+
 ## 起動手順
 
 ```bash

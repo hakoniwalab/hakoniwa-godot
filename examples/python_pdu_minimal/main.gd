@@ -32,8 +32,8 @@ func _ready() -> void:
 	_sim.delta_time_usec = 20000
 	_sim.use_internal_shm_endpoint = true
 	_sim.shm_endpoint_config_path = "res://config/endpoint_shm_with_pdu.json"
-	_sim.internal_endpoint_codec_plugins = PackedStringArray([
-		"res://addons/hakoniwa/codecs/std_msgs_codec"
+	_sim.internal_endpoint_codec_packages = PackedStringArray([
+		"std_msgs"
 	])
 	_sim.simulation_started.connect(_on_simulation_started)
 	_sim.simulation_stopped.connect(_on_simulation_stopped)
