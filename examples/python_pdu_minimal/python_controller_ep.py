@@ -51,12 +51,11 @@ def my_on_manual_timing_control(_context):
             _endpoint.send_by_name(key, payload)
         except Exception as exc:
             print(f"HAKO_PYTHON_EP_WRITE_MOTOR_FAILED:{exc}")
-            break
+            #skip sleep and retry immediately
         print(
             f"HAKO_PYTHON_EP_WRITE_MOTOR:{hakopy.simulation_time()}:{motor.linear.x},{motor.linear.y},{motor.linear.z}"
         )
         result = hakopy.usleep(20000)
-        time.sleep(0.02)
         if not result:
             break
         count += 1
@@ -111,6 +110,7 @@ def main():
         while True:
             ret = hakopy.start()
             print(f"HAKO_PYTHON_EP_START_RETURN:{ret}")
+            break
     finally:
         try:
             _endpoint.stop()
