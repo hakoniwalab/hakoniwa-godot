@@ -5,7 +5,7 @@ signal simulation_started
 signal simulation_stopped
 signal simulation_reset
 signal simulation_step(simtime_usec, world_time_usec)
-signal initialized
+signal simulation_ready
 
 const HakoniwaEndpointNode = preload("res://addons/hakoniwa/scripts/hakoniwa_pdu_endpoint.gd")
 
@@ -213,7 +213,7 @@ func get_endpoint() -> Variant:
 	return _internal_endpoint
 
 func _emit_initialized() -> void:
-	initialized.emit()
+	simulation_ready.emit()
 
 func _tick_internal(allow_step: bool) -> bool:
 	if not _ensure_core_asset():

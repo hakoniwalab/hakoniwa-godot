@@ -1,5 +1,5 @@
 {
-  "name": "godot_python_pdu_minimal_endpoint",
+  "name": "godot_core_pro_two_asset_endpoint",
   "pdu_def_path": "comm/pdu_def.json",
   "cache": "cache/buffer.json",
   "comm": "comm/shm_poll_comm.json"

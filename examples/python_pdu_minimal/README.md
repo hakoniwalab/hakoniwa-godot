@@ -88,7 +88,7 @@ _sim.internal_endpoint_codec_packages = PackedStringArray([
 
 `notify_on_recv=true` の PDU を internal SHM endpoint で使う場合、Godot 単体では channel 作成者がいないため、start 前に明示的に作る必要があります。
 
-`sample.gd` では `initialized` 後にこうしています。
+`sample.gd` では `simulation_ready` 後にこうしています。
 
 ```gdscript
 var endpoint = sim.get_endpoint()

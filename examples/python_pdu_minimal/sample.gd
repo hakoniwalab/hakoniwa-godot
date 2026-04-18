@@ -7,13 +7,13 @@ var _motor_subscription_id := -1
 var _send_count := 0
 
 func _ready() -> void:
-	sim.initialized.connect(_on_sim_initialized)
+	sim.simulation_ready.connect(_on_simulation_ready)
 	sim.simulation_started.connect(_on_simulation_started)
 	sim.simulation_stopped.connect(_on_simulation_stopped)
 	sim.simulation_reset.connect(_on_simulation_reset)
 	sim.simulation_step.connect(_on_simulation_step)
 
-func _on_sim_initialized() -> void:
+func _on_simulation_ready() -> void:
 	var endpoint = sim.get_endpoint()
 	if endpoint == null:
 		push_error(sim.get_last_error_text())
