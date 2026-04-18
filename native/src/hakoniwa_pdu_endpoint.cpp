@@ -88,6 +88,8 @@ void HakoniwaPduEndpoint::_bind_methods() {
   ClassDB::bind_method(D_METHOD("set_recv_event", "robot", "channel_id"), &HakoniwaPduEndpoint::set_recv_event);
   ClassDB::bind_method(D_METHOD("get_pdu_channel_id_by_name", "robot", "pdu_name"),
                        &HakoniwaPduEndpoint::get_pdu_channel_id_by_name);
+  ClassDB::bind_method(D_METHOD("create_pdu_lchannel_by_name", "robot", "pdu_name"),
+                       &HakoniwaPduEndpoint::create_pdu_lchannel_by_name);
   ClassDB::bind_method(D_METHOD("subscribe_on_recv_callback_by_name", "robot", "pdu_name"),
                        &HakoniwaPduEndpoint::subscribe_on_recv_callback_by_name);
   ClassDB::bind_method(D_METHOD("pop_subscribed_record"), &HakoniwaPduEndpoint::pop_subscribed_record);
@@ -260,6 +262,38 @@ int HakoniwaPduEndpoint::get_pdu_channel_id_by_name(const String &robot, const S
   }
   set_last_error(HAKO_PDU_ERR_OK);
   return channel_id;
+}
+
+int HakoniwaPduEndpoint::create_pdu_lchannel_by_name(const String &robot, const String &pdu_name) {
+  if (handle_ == nullptr) {
+    set_last_error(HAKO_PDU_ERR_INVALID_ARGUMENT);
+    return last_error_;
+  }
+  hako_pdu_key_t key{};
+  if (!make_name_key(robot, pdu_name, key)) {
+    set_last_error(HAKO_PDU_ERR_INVALID_ARGUMENT);
+    return last_error_;
+  }
+
+  const int channel_id = hako_pdu_endpoint_get_pdu_channel_id(handle_, &key);
+  if (channel_id < 0) {
+    set_last_error(HAKO_PDU_ERR_INVALID_PDU_KEY);
+    return last_error_;
+  }
+
+  const size_t pdu_size = hako_pdu_endpoint_get_pdu_size(handle_, &key);
+  if (pdu_size == 0) {
+    set_last_error(HAKO_PDU_ERR_INVALID_PDU_KEY);
+    return last_error_;
+  }
+
+  const CharString robot_utf8 = robot.utf8();
+  const int err = hakoniwa_asset_create_pdu_lchannel(
+      robot_utf8.get_data(),
+      static_cast<HakoPduChannelIdType>(channel_id),
+      pdu_size);
+  set_last_error(err == 0 ? HAKO_PDU_ERR_OK : HAKO_PDU_ERR_INVALID_CONFIG);
+  return last_error_;
 }
 
 int HakoniwaPduEndpoint::subscribe_on_recv_callback_by_name(const String &robot, const String &pdu_name) {

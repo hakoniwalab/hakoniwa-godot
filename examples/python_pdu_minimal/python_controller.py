@@ -103,8 +103,9 @@ def main():
         print("HAKO_TWO_ASSET_PY_REGISTER_FAILED")
         return 1
 
-    ret = hakopy.start()
-    print(f"HAKO_TWO_ASSET_PY_START_RETURN:{ret}")
+    while True:
+        ret = hakopy.start()
+        print(f"HAKO_TWO_ASSET_PY_START_RETURN:{ret}")
     return 0
 
 

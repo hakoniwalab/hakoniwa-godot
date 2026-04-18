@@ -9,6 +9,7 @@
 
 extern "C" {
 #include <hakoniwa/pdu/c_endpoint.h>
+#include <hakoniwa_asset_polling.h>
 }
 
 namespace godot {
@@ -41,6 +42,7 @@ public:
   int get_pending_count() const;
   int set_recv_event(const String &robot, int channel_id);
   int get_pdu_channel_id_by_name(const String &robot, const String &pdu_name) const;
+  int create_pdu_lchannel_by_name(const String &robot, const String &pdu_name);
   int subscribe_on_recv_callback_by_name(const String &robot, const String &pdu_name);
   Dictionary pop_subscribed_record();
   Dictionary recv_by_name(const String &robot, const String &pdu_name);

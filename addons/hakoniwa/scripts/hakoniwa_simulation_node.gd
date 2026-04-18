@@ -5,6 +5,7 @@ signal simulation_started
 signal simulation_stopped
 signal simulation_reset
 signal simulation_step(simtime_usec, world_time_usec)
+signal initialized
 
 const HakoniwaEndpointNode = preload("res://addons/hakoniwa/scripts/hakoniwa_pdu_endpoint.gd")
 
@@ -118,11 +119,13 @@ func initialize() -> int:
 		if open_result != 0:
 			_last_error_text = _internal_endpoint.get_last_error_text()
 			return open_result
+		print("internal SHM endpoint initialized with config: %s" % shm_endpoint_config_path)
 	var result: int = _core_asset.initialize_asset(asset_name)
 	_update_error("initialize")
 	if result == 0:
 		_current_simtime_usec = 0
 		_sync_state = SYNC_STATE_STOPPED
+		call_deferred("_emit_initialized")
 	return result
 
 func shutdown() -> void:
@@ -208,6 +211,9 @@ func get_endpoint() -> Variant:
 		return null
 	_last_error_text = ""
 	return _internal_endpoint
+
+func _emit_initialized() -> void:
+	initialized.emit()
 
 func _tick_internal(allow_step: bool) -> bool:
 	if not _ensure_core_asset():
@@ -325,16 +331,20 @@ func _tick_internal(allow_step: bool) -> bool:
 
 func _handle_start_event() -> bool:
 	_leave_blocked_state()
+	var pdu_created: bool = _core_asset.is_pdu_created()
+	_update_error("tick.is_pdu_created")	
 	if _internal_endpoint != null:
 		var start_endpoint_result: int = _internal_endpoint.start_endpoint()
 		if start_endpoint_result != 0:
 			_last_error_text = _internal_endpoint.get_last_error_text()
 			_sync_state = SYNC_STATE_ERROR
+			print("start_endpoint failed: %s" % _last_error_text)
 			return false
 		var post_start_endpoint_result: int = _internal_endpoint.post_start_endpoint()
 		if post_start_endpoint_result != 0:
 			_last_error_text = _internal_endpoint.get_last_error_text()
 			_sync_state = SYNC_STATE_ERROR
+			print("post_start_endpoint failed: %s" % _last_error_text)
 			return false
 	if _callbacks != null:
 		_callbacks.on_simulation_start()

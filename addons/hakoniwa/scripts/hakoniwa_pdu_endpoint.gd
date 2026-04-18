@@ -151,6 +151,13 @@ func get_pending_count() -> int:
 	_update_endpoint_error("get_pending_count")
 	return count
 
+func create_pdu_lchannel(robot: String, pdu_name: String) -> int:
+	if not _ensure_endpoint():
+		return -1
+	var result: int = _endpoint.create_pdu_lchannel_by_name(robot, pdu_name)
+	_update_endpoint_error("create_pdu_lchannel")
+	return result
+
 func recv_raw(robot: String, pdu_name: String) -> Dictionary:
 	if not _ensure_endpoint():
 		return {}

@@ -18,6 +18,10 @@
 - `simulation_started`
 - `simulation_step`
 
+補足:
+
+- internal endpoint を使う場合、`get_endpoint()` や subscription 作成は `_ready()` 直後ではなく `initialized` signal を起点にする
+
 期待する最小ログ:
 
 ```text

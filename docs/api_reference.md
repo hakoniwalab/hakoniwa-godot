@@ -32,6 +32,10 @@
 
 ### `HakoniwaSimNode`
 
+- signal:
+  - `initialized`
+    - `initialize()` 成功後に deferred emit される
+    - `auto_initialize_on_ready=true` の場合に、同一 scene の他 node から `get_endpoint()` / subscription 作成を始める起点として使う
 - `asset_name: String`
 - `use_internal_shm_endpoint: bool`
 - `shm_endpoint_config_path: String`
