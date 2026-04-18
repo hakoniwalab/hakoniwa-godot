@@ -1,0 +1,6 @@
+{
+  "name": "python_pdu_websocket_client",
+  "pdu_def_path": "comm/pdu_def.json",
+  "cache": "cache/queue.json",
+  "comm": "comm/websocket_client_inout_comm.json"
+}

@@ -110,6 +110,19 @@
 - [ ] physics 連携時の state model (`BLOCKED_BY_WORLD_TIME` など) を設計へ反映する
 - [ ] `hakoniwa-pdu-rpc` 統合の docs を起こす
 
+### 5. WebSocket endpoint-only example
+
+- [ ] `HakoniwaEndpointNode` だけを使う Godot sample を追加する
+- [ ] SimNode / 時刻同期を使わない構成にする
+- [ ] Godot 側 config を WebSocket client/server のどちらかで固定する
+- [ ] Python 側 sample を `hakoniwa-pdu-endpoint` `Endpoint` ベースで追加する
+- [ ] `python_pdu_minimal` と同じ `geometry_msgs/Twist` の送受信内容に揃える
+- [ ] Godot 側で `open() / start() / post_start()` と subscription の最小導線を確認する
+- [ ] Python 側で `send_by_name()` / `subscribe_on_recv_callback_by_name()` の最小導線を確認する
+- [ ] example 用 config を `examples/` 配下に置く
+- [ ] example README に起動順と成功時ログを書く
+- [ ] `SimNode` なし導線として `docs/quick_start.md` か関連 doc から辿れるようにする
+
 ### 3. 実装開始条件の明確化
 
 - [x] 対応 Godot バージョンを決める
