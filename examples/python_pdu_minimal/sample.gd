@@ -4,6 +4,7 @@ extends Node
 var _motor_endpoint = null
 var _pos_endpoint = null
 var _motor_subscription_id := -1
+var _send_count := 0
 
 func _ready() -> void:
 	sim.initialized.connect(_on_sim_initialized)
@@ -17,8 +18,10 @@ func _on_sim_initialized() -> void:
 	if endpoint == null:
 		push_error(sim.get_last_error_text())
 		return
-	var ret = endpoint.create_pdu_lchannel("Robot", "motor")
-	print("INFO: create pdu channel: ret = ", ret)
+	var motor_ret = endpoint.create_pdu_lchannel("Robot", "motor")
+	var pos_ret = endpoint.create_pdu_lchannel("Robot", "pos")
+	print("INFO: create motor pdu channel: ret = ", motor_ret)
+	print("INFO: create pos pdu channel: ret = ", pos_ret)
 	_motor_endpoint = sim.get_typed_endpoint("Robot", "motor")
 	_pos_endpoint = sim.get_typed_endpoint("Robot", "pos")
 	if _motor_endpoint == null or _pos_endpoint == null:
@@ -45,6 +48,27 @@ func _on_simulation_reset() -> void:
 	print("simulation reset")
 
 func _on_simulation_step(simtime_usec: int, world_time_usec: int) -> void:
+	if _pos_endpoint != null:
+		var pos_dict := {
+			"linear": {
+				"x": float(_send_count),
+				"y": float(_send_count + 1),
+				"z": float(_send_count + 2)
+			},
+			"angular": {
+				"x": 0.0,
+				"y": 0.0,
+				"z": 0.0
+			}
+		}
+		if (_send_count % 2) == 0:
+			var send_ret: int = _pos_endpoint.send_dict(pos_dict)
+			if send_ret == 0:
+				print("pos=%s" % JSON.stringify(pos_dict))
+			else:
+				print("sample pos send failed: ", send_ret)
+				print(sim.get_last_error_text())
+		_send_count = _send_count + 1
 	print("step simtime=%d world=%d" % [simtime_usec, world_time_usec])
 
 func _on_motor_message(message) -> void:

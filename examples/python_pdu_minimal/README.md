@@ -17,6 +17,7 @@
 ## 何が分かるか
 
 - `HakoniwaSimNode` を 1 つ置けば internal SHM endpoint を持てる
+- `notify_on_recv=true` を使う PDU は、start 前に channel 作成が必要
 - Godot 側は `simulation_step` で `send_message()` できる
 - Godot 側は `create_subscription_message()` で Python からの受信を扱える
 - Python 側は `hakopy + Endpoint` で PDU を読む / 書く
@@ -81,8 +82,19 @@ _sim.internal_endpoint_codec_packages = PackedStringArray([
    - `Use Internal Shm Endpoint = On`
    - `Shm Endpoint Config Path = res://config/endpoint_shm_with_pdu.json`
    - `Internal Endpoint Codec Packages = ["std_msgs"]`
-5. Python 側では [python_controller.py](python_controller.py) を使う
-6. Python 側の起動引数には [endpoint_shm_with_pdu_python.json](config/endpoint_shm_with_pdu_python.json) を渡す
+5. `sample.gd` のように、start 前に internal endpoint で channel を作る
+6. Python 側では [python_controller.py](python_controller.py) を使う
+7. Python 側の起動引数には [endpoint_shm_with_pdu_python.json](config/endpoint_shm_with_pdu_python.json) を渡す
+
+`notify_on_recv=true` の PDU を internal SHM endpoint で使う場合、Godot 単体では channel 作成者がいないため、start 前に明示的に作る必要があります。
+
+`sample.gd` では `initialized` 後にこうしています。
+
+```gdscript
+var endpoint = sim.get_endpoint()
+endpoint.create_pdu_lchannel("Robot", "godot_to_python")
+endpoint.create_pdu_lchannel("Robot", "python_to_godot")
+```
 
 ## 起動手順
 
