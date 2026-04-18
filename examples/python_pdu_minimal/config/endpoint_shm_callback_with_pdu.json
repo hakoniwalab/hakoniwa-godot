@@ -1,0 +1,6 @@
+{
+  "name": "godot_core_pro_two_asset_callback_endpoint",
+  "pdu_def_path": "comm/pdu_def.json",
+  "cache": "cache/buffer.json",
+  "comm": "comm/shm_callback_comm.json"
+}
