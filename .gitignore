@@ -4,6 +4,7 @@ build-common-codecs/
 dist/
 .DS_Store
 .godot/
+__pycache__/
 addons/hakoniwa/bin/
 addons/hakoniwa/codecs/*.dylib
 addons/hakoniwa/codecs/*.so
