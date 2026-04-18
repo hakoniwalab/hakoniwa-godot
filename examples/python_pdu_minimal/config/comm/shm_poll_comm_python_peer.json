@@ -1,0 +1,18 @@
+{
+  "protocol": "shm",
+  "impl_type": "poll",
+  "asset_name": "python_pdu_minimal_peer",
+  "name": "hakoniwa_shared_memory",
+  "direction": "inout",
+  "io": {
+    "robots": [
+      {
+        "name": "Robot",
+        "pdu": [
+          { "name": "godot_to_python", "notify_on_recv": false },
+          { "name": "python_to_godot", "notify_on_recv": true }
+        ]
+      }
+    ]
+  }
+}

@@ -171,9 +171,6 @@ bash tools/run_core_pro_conductor.sh
 
 # terminal 2
 bash tools/run_python_pdu_minimal_controller.sh
-
-# terminal 3
-<GODOT_BIN> --headless --path examples/python_pdu_minimal
 ```
 
 成功時の目印:
@@ -181,7 +178,8 @@ bash tools/run_python_pdu_minimal_controller.sh
 - Godot 側: `HAKO_PYTHON_PDU_MINIMAL_GODOT_OK`
 - Python 側: `HAKO_PYTHON_PDU_MINIMAL_PY_OK`
 
-Python controller には `config/comm/pdu_def.json` を渡します。  
+Godot 側は完成済み project ではなく、既存 project に `sample.gd` と `config/` を持ち込んで試します。  
+Python controller には `config/endpoint_shm_with_pdu_python.json` を渡します。  
 Godot 側は `config/endpoint_shm_with_pdu.json` を internal endpoint 用に使います。
 
 Inspector で internal SHM endpoint を設定する場合は、`Internal Endpoint Codec Packages` に internal endpoint で使う message package を入れてください。

@@ -1,6 +1,6 @@
 extends Node
 
-@onready var sim: HakoniwaSimNode = $"./HakoniwaSimNode"
+@onready var sim: HakoniwaSimNode = $"../HakoniwaSimNode"
 
 func _ready() -> void:
 	sim.simulation_started.connect(_on_simulation_started)
