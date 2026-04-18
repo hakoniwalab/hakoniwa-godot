@@ -7,17 +7,22 @@ import json
 import os
 
 import hakopy
-from hakoniwa_pdu.pdu_msgs.geometry_msgs.pdu_conv_Twist import py_to_pdu_Twist
+from hakoniwa_pdu.pdu_msgs.geometry_msgs.pdu_conv_Twist import py_to_pdu_Twist, pdu_to_py_Twist
 from hakoniwa_pdu.pdu_msgs.geometry_msgs.pdu_pytype_Twist import Twist
 from hakoniwa_pdu_endpoint.c_endpoint import Endpoint, PduKey
 
 
 _endpoint = None
 
+def on_recv(resolved_key, payload):
+    py_obj = pdu_to_py_Twist(payload) 
+    print(resolved_key.robot, resolved_key.channel_id, py_obj)
 
 def my_on_initialize(_context):
     global _endpoint
     try:
+        recv_key = PduKey(robot="Robot", pdu="pos")
+        _endpoint.subscribe_on_recv_callback_by_name(recv_key, on_recv)
         _endpoint.post_start()
         print("HAKO_PYTHON_EP_POST_START_OK")
     except Exception as exc:
