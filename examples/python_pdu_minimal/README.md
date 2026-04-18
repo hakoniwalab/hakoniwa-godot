@@ -82,9 +82,14 @@ _sim.internal_endpoint_codec_packages = PackedStringArray([
    - `Use Internal Shm Endpoint = On`
    - `Shm Endpoint Config Path = res://config/endpoint_shm_with_pdu.json`
    - `Internal Endpoint Codec Packages = ["std_msgs"]`
+   - `Asset Name` を Python 側 config と整合する名前に設定する
 5. `sample.gd` のように、start 前に internal endpoint で channel を作る
 6. Python 側では [python_controller.py](python_controller.py) を使う
 7. Python 側の起動引数には [endpoint_shm_with_pdu_python.json](config/endpoint_shm_with_pdu_python.json) を渡す
+
+設定例:
+
+![HakoniwaSimNode PDU Config](../../docs/images/quick_start_pdu_comm.png)
 
 `notify_on_recv=true` の PDU を internal SHM endpoint で使う場合、Godot 単体では channel 作成者がいないため、start 前に明示的に作る必要があります。
 
@@ -95,6 +100,14 @@ var endpoint = sim.get_endpoint()
 endpoint.create_pdu_lchannel("Robot", "godot_to_python")
 endpoint.create_pdu_lchannel("Robot", "python_to_godot")
 ```
+
+ハマりどころ:
+
+- `Asset Name` が SHM 側 config とずれていると通信できません
+- `Use Internal Shm Endpoint` を有効にしないと `get_endpoint()` は使えません
+- `Shm Endpoint Config Path` が未設定だと internal endpoint は初期化されません
+- `Internal Endpoint Codec Packages` に必要な package を入れないと message encode/decode が失敗します
+- `notify_on_recv=true` を使う PDU は、start 前に `create_pdu_lchannel()` が必要です
 
 ## 起動手順
 
@@ -112,44 +125,3 @@ python python_controller.py config/endpoint_shm_with_pdu_python.json
 Python 側には `config/endpoint_shm_with_pdu_python.json` を渡します。  
 Godot 側には `config/endpoint_shm_with_pdu.json` を使います。  
 この example 自体は repo 内の完成済み Godot project ではなく、既存 project に持ち込む素材として扱います。
-
-## Python 同士で閉じる確認
-
-Godot を介さず、まず Python 側だけで相互通信を確認したい場合は `python_sample.py` を使います。
-
-```bash
-# terminal 1
-bash tools/run_core_pro_conductor.sh
-
-# terminal 2
-bash tools/run_python_pdu_minimal_controller.sh
-
-# terminal 3
-bash tools/run_python_pdu_minimal_peer.sh
-```
-
-成功時の目印:
-
-- controller 側: `HAKO_PYTHON_PDU_MINIMAL_PY_OK`
-- peer 側: `HAKO_PYTHON_PDU_MINIMAL_PEER_OK`
-
-## 成功時ログ
-
-Godot:
-
-```text
-HAKO_PYTHON_PDU_MINIMAL_GODOT_READY
-HAKO_PYTHON_PDU_MINIMAL_GODOT_START_FEEDBACK_OK
-HAKO_PYTHON_PDU_MINIMAL_GODOT_SEND:1:...
-HAKO_PYTHON_PDU_MINIMAL_GODOT_RECV:1:...
-HAKO_PYTHON_PDU_MINIMAL_GODOT_OK
-```
-
-Python:
-
-```text
-HAKO_PYTHON_PDU_MINIMAL_PY_ENDPOINT_READY
-HAKO_PYTHON_PDU_MINIMAL_PY_SEND:1:...
-HAKO_PYTHON_PDU_MINIMAL_PY_RECV:1:...
-HAKO_PYTHON_PDU_MINIMAL_PY_OK
-```
