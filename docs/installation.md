@@ -154,12 +154,12 @@ addon の load 確認だけを行うなら、`tests/smoke/basic_subscriber` の 
 
 ## `python_pdu_minimal` を試す場合
 
-`python_pdu_minimal` は、`HakoniwaSimNode` を置いた Godot project が Python controller と `std_msgs/UInt64` を双方向にやり取りする最小 example です。
+`python_pdu_minimal` は、`HakoniwaSimNode` を置いた Godot project が Python controller と `geometry_msgs/Twist` を双方向にやり取りする最小 example です。
 
-この example は `std_msgs` codec が必要です。
+この example は `geometry_msgs` codec が必要です。
 
 ```bash
-cmake -S . -B build -DHAKONIWA_GODOT_CODEC_PACKAGES="std_msgs"
+cmake -S . -B build -DHAKONIWA_GODOT_CODEC_PACKAGES="geometry_msgs"
 cmake --build build -j4
 ```
 
@@ -175,11 +175,11 @@ bash tools/run_python_pdu_minimal_controller.sh
 
 成功時の目印:
 
-- Godot 側: `HAKO_PYTHON_PDU_MINIMAL_GODOT_OK`
-- Python 側: `HAKO_PYTHON_PDU_MINIMAL_PY_OK`
+- Godot 側: `simulation started`, `motor=...`, `pos=...`
+- Python 側: `HAKO_PYTHON_EP_ENDPOINT_READY`, `HAKO_PYTHON_EP_POST_START_OK`
 
 Godot 側は完成済み project ではなく、既存 project に `sample.gd` と `config/` を持ち込んで試します。  
-Python controller には `config/endpoint_shm_with_pdu_python.json` を渡します。  
+Python controller には `config/endpoint_shm_callback_with_pdu.json` を渡します。  
 Godot 側は `config/endpoint_shm_with_pdu.json` を internal endpoint 用に使います。
 
 Inspector で internal SHM endpoint を設定する場合は、`Internal Endpoint Codec Packages` に internal endpoint で使う message package を入れてください。
@@ -187,7 +187,7 @@ Inspector で internal SHM endpoint を設定する場合は、`Internal Endpoin
 例:
 
 ```text
-std_msgs
+geometry_msgs
 ```
 
 ## integration test を試す場合

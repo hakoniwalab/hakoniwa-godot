@@ -1,77 +1,45 @@
 # Godot + Python Minimal PDU Example
 
-このディレクトリには、`HakoniwaSimNode` を使って **Godot と Python が `std_msgs/UInt64` を双方向にやり取りする最小素材**を置きます。
+このディレクトリには、`HakoniwaSimNode` を使って **Godot と Python が `geometry_msgs/Twist` を双方向にやり取りする最小素材**を置きます。
 
 含まれるもの:
 
 - `sample.gd`
   - Godot 側の最小 script
-- `python_controller.py`
+- `python_controller_ep.py`
   - Python 側の最小 controller
-- `python_sample.py`
-  - `sample.gd` 相当の Python peer
+  - `hakopy` は asset register 用
+  - PDU 通信は `hakoniwa-pdu-endpoint` の `Endpoint` を使う
 - `config/`
   - PDU 定義と endpoint 設定
-  - Godot 側と Python 側で別々の SHM poll config を使う
+  - Godot 側は SHM poll、Python 側は SHM callback を使う
 
 ## 何が分かるか
 
 - `HakoniwaSimNode` を 1 つ置けば internal SHM endpoint を持てる
+- `simulation_ready` 後に internal endpoint を安全に触れる
 - `notify_on_recv=true` を使う PDU は、start 前に channel 作成が必要
-- Godot 側は `simulation_step` で `send_message()` できる
-- Godot 側は `create_subscription_message()` で Python からの受信を扱える
-- Python 側は `hakopy + Endpoint` で PDU を読む / 書く
+- Godot 側は typed endpoint で `motor` を受信し、`pos` を送信できる
+- Python 側は `hakopy + Endpoint` で `motor` を送信し、`pos` の受信 callback を扱える
 
 ## 使う PDU
 
-- `godot_to_python`
-  - `std_msgs/UInt64`
-- `python_to_godot`
-  - `std_msgs/UInt64`
+- `motor`
+  - `geometry_msgs/Twist`
+- `pos`
+  - `geometry_msgs/Twist`
 
 ## 前提
 
-最低限 `std_msgs` codec が必要です。
+この example を動かすには、Godot addon と `geometry_msgs` codec が使える状態である必要があります。  
+build 手順や codec の準備方法は repo ルートの [README.md](../../README.md) を参照してください。
 
-```bash
-cmake -S . -B build -DHAKONIWA_GODOT_CODEC_PACKAGES="std_msgs"
-cmake --build build -j4
-```
-
-`std_msgs` 以外もまとめて揃えたい場合は、代わりにこれでも構いません。
-
-```bash
-bash tools/build_all_codecs.sh
-```
-
-Python 側は `hakopy` と `hakoniwa-pdu-endpoint` が installer 済みである前提です。
+Python 側は `hakopy` と `hakoniwa-pdu-endpoint` がインストール済みである前提です。
 
 - `hakopy`
   - 箱庭 core との接続に使う
 - `hakoniwa-pdu-endpoint`
   - PDU 通信に使う
-
-`hakoniwa-pdu-endpoint` は installer のインストール先に Python package と native library 一式が入っている前提で、`python_controller.py` は repo 内 `third_party/` を直接参照しません。
-
-## Godot 側の internal endpoint 設定
-
-`Use Internal Shm Endpoint` を有効化する場合、`Internal Endpoint Codec Packages` に internal endpoint で使う package 名を設定します。
-
-この example では `std_msgs/UInt64` だけを使うので、設定値は次の 1 つです。
-
-```text
-std_msgs
-```
-
-コードで設定する場合の例:
-
-```gdscript
-_sim.internal_endpoint_codec_packages = PackedStringArray([
-	"std_msgs"
-])
-```
-
-複数の message type を internal endpoint で使う場合は、必要な package 名を配列に追加します。
 
 ## 使い方
 
@@ -81,11 +49,20 @@ _sim.internal_endpoint_codec_packages = PackedStringArray([
 4. `HakoniwaSimNode` に次を設定する
    - `Use Internal Shm Endpoint = On`
    - `Shm Endpoint Config Path = res://config/endpoint_shm_with_pdu.json`
-   - `Internal Endpoint Codec Packages = ["std_msgs"]`
+   - `Internal Endpoint Codec Packages = ["geometry_msgs"]`
    - `Asset Name` を Python 側 config と整合する名前に設定する
-5. `sample.gd` のように、start 前に internal endpoint で channel を作る
-6. Python 側では [python_controller.py](python_controller.py) を使う
-7. Python 側の起動引数には [endpoint_shm_with_pdu_python.json](config/endpoint_shm_with_pdu_python.json) を渡す
+   
+   コードで設定する場合の例:
+
+   ```gdscript
+   _sim.internal_endpoint_codec_packages = PackedStringArray([
+   	"geometry_msgs"
+   ])
+   ```
+5. `sample.gd` のように、`simulation_ready` 後に internal endpoint で channel を作る
+   - 下記のコード例を参照
+6. Python 側では [python_controller_ep.py](python_controller_ep.py) を使う
+7. Python 側の起動引数には [endpoint_shm_callback_with_pdu.json](config/endpoint_shm_callback_with_pdu.json) を渡す
 
 設定例:
 
@@ -97,17 +74,20 @@ _sim.internal_endpoint_codec_packages = PackedStringArray([
 
 ```gdscript
 var endpoint = sim.get_endpoint()
-endpoint.create_pdu_lchannel("Robot", "godot_to_python")
-endpoint.create_pdu_lchannel("Robot", "python_to_godot")
+endpoint.create_pdu_lchannel("Robot", "motor")
+endpoint.create_pdu_lchannel("Robot", "pos")
 ```
 
-ハマりどころ:
+## よくある詰まりどころ
 
-- `Asset Name` が SHM 側 config とずれていると通信できません
-- `Use Internal Shm Endpoint` を有効にしないと `get_endpoint()` は使えません
-- `Shm Endpoint Config Path` が未設定だと internal endpoint は初期化されません
-- `Internal Endpoint Codec Packages` に必要な package を入れないと message encode/decode が失敗します
-- `notify_on_recv=true` を使う PDU は、start 前に `create_pdu_lchannel()` が必要です
+- `get_endpoint()` が `null` になる
+  - `Use Internal Shm Endpoint` が無効、または `Shm Endpoint Config Path` が未設定です
+- typed send / recv が失敗する
+  - `Internal Endpoint Codec Packages` に `geometry_msgs` が入っていません
+- Python と通信できない
+  - `Asset Name` が SHM 側 config と一致していません
+- `notify_on_recv=true` で start に失敗する
+  - start 前に `create_pdu_lchannel()` を呼んでいません
 
 ## 起動手順
 
@@ -116,12 +96,33 @@ endpoint.create_pdu_lchannel("Robot", "python_to_godot")
 bash tools/run_core_pro_conductor.sh
 
 # terminal 2
-python python_controller.py config/endpoint_shm_with_pdu_python.json
+python python_controller_ep.py config/endpoint_shm_callback_with_pdu.json
 
 # terminal 3
 <GODOT_BIN> --path /path/to/your_godot_project
 ```
 
-Python 側には `config/endpoint_shm_with_pdu_python.json` を渡します。  
+Python 側には `config/endpoint_shm_callback_with_pdu.json` を渡します。  
 Godot 側には `config/endpoint_shm_with_pdu.json` を使います。  
+terminal 3 の起動は、Godot project 側で `HakoniwaSimNode` の Inspector 設定が済んでいる前提です。  
 この example 自体は repo 内の完成済み Godot project ではなく、既存 project に持ち込む素材として扱います。
+
+## 成功時ログ
+
+Godot:
+
+```text
+simulation started
+motor={...}
+pos={...}
+step simtime=... world=...
+```
+
+Python:
+
+```text
+HAKO_PYTHON_EP_ENDPOINT_READY
+HAKO_PYTHON_EP_POST_START_OK
+HAKO_PYTHON_EP_WRITE_MOTOR:...
+Robot 1 Twist(linear=Vector3(...), angular=Vector3(...))
+```
