@@ -9,31 +9,30 @@ signal typed_message_received(subscription_id, typed_value, record)
 signal endpoint_ready
 
 @export var config_path: String = ""
-@export var codec_plugins: PackedStringArray = []
+@export var codec_node_path: NodePath
 @export var endpoint_name: String = "hakoniwa_godot_endpoint"
 @export var direction: int = 2
 @export var auto_start_on_ready: bool = false
 @export var auto_process_recv_events: bool = false
 @export var auto_close_on_exit: bool = true
-@export_group("Advanced")
-@export var message_script_roots: PackedStringArray = PackedStringArray([
-	"res://addons/hakoniwa_msgs"
-])
 
 var _endpoint: Node = null
+var _codec_node: Node = null
 var _codecs: Node = null
 var _last_error_text: String = ""
 var _typed_binding_cache: Dictionary = {}
-var _codec_extension_resources: Array = []
 var _subscriptions: Dictionary = {}
 var _registered_recv_keys: Dictionary = {}
 var _next_subscription_id: int = 1
 
 func _ready() -> void:
-	if not _ensure_native_nodes():
+	call_deferred("_late_ready")
+
+func _late_ready() -> void:
+	if not _ensure_codec_node():
 		push_error(_last_error_text)
 		return
-	if codec_plugins.size() > 0 and load_configured_codecs() != codec_plugins.size():
+	if not _ensure_endpoint():
 		push_error(_last_error_text)
 		return
 	if not config_path.is_empty():
@@ -196,7 +195,8 @@ func create_subscription_raw(robot: String, pdu_name: String, callback: Callable
 		return -1
 	return _create_subscription(binding, "raw", callback)
 
-func create_subscription_message(robot: String,
+func create_subscription_message(
+		robot: String,
 		pdu_name: String,
 		package_name: String,
 		message_name: String,
@@ -222,25 +222,6 @@ func destroy_subscription(subscription_id: int) -> bool:
 	_subscriptions.erase(subscription_id)
 	_last_error_text = ""
 	return true
-
-func load_codec_plugin(plugin_path: String) -> bool:
-	if not _ensure_codecs():
-		return false
-	if not _load_codec_gdextension(plugin_path):
-		return false
-	var loaded: bool = _codecs.load_plugin(plugin_path)
-	_update_codec_error("load_codec_plugin")
-	return loaded
-
-func load_configured_codecs() -> int:
-	if not _ensure_codecs():
-		return 0
-	var loaded_count := 0
-	for plugin_path in codec_plugins:
-		if not load_codec_plugin(plugin_path):
-			return loaded_count
-		loaded_count += 1
-	return loaded_count
 
 func has_codec(package_name: String, message_name: String) -> bool:
 	if not _ensure_codecs():
@@ -311,7 +292,8 @@ func decode_typed_record(package_name: String, message_name: String, record: Dic
 	decoded["typed_value"] = typed_value
 	return decoded
 
-func send_message(robot: String,
+func send_message(
+		robot: String,
 		pdu_name: String,
 		package_name: String,
 		message_name: String,
@@ -327,7 +309,8 @@ func recv_message(robot: String, pdu_name: String, package_name: String, message
 func recv_next_message(package_name: String, message_name: String) -> Dictionary:
 	return decode_record(package_name, message_name, recv_next_raw())
 
-func send_typed_message(robot: String,
+func send_typed_message(
+		robot: String,
 		pdu_name: String,
 		package_name: String,
 		message_name: String,
@@ -352,20 +335,27 @@ func get_typed_endpoint(robot: String, pdu_name: String) -> Variant:
 		robot,
 		pdu_name,
 		binding["package_name"],
-		binding["message_name"])
+		binding["message_name"]
+	)
 
 func _create_subscription(binding: Dictionary, delivery_kind: String, callback: Callable) -> int:
+	if not _ensure_endpoint():
+		return -1
+
 	var register_key := "%s::%d" % [binding["robot"], binding["channel_id"]]
 	if not _registered_recv_keys.has(register_key):
 		var register_result: int = _endpoint.subscribe_on_recv_callback_by_name(
 			binding["robot"],
-			binding["pdu_name"])
+			binding["pdu_name"]
+		)
 		_update_endpoint_error("create_subscription.subscribe_on_recv_callback_by_name")
 		if register_result != 0:
 			return -1
 		_registered_recv_keys[register_key] = true
+
 	var subscription_id := _next_subscription_id
 	_next_subscription_id += 1
+
 	var subscription := binding.duplicate()
 	subscription["delivery_kind"] = delivery_kind
 	subscription["callback"] = callback
@@ -377,19 +367,23 @@ func _dispatch_record(record: Dictionary) -> int:
 	var robot: String = record.get("robot", "")
 	var channel_id: int = record.get("channel_id", -1)
 	var dispatched := 0
+
 	for subscription_id in _subscriptions.keys():
 		var subscription: Dictionary = _subscriptions[subscription_id]
 		if subscription.get("robot", "") != robot:
 			continue
 		if subscription.get("channel_id", -1) != channel_id:
 			continue
+
 		var delivery_kind: String = subscription.get("delivery_kind", "raw")
 		var callback: Callable = subscription.get("callback", Callable())
+
 		if delivery_kind == "typed":
 			var typed_record := decode_typed_record(
 				subscription["package_name"],
 				subscription["message_name"],
-				record)
+				record
+			)
 			if typed_record.is_empty():
 				continue
 			var typed_value = typed_record.get("typed_value", null)
@@ -398,11 +392,13 @@ func _dispatch_record(record: Dictionary) -> int:
 			typed_message_received.emit(subscription_id, typed_value, typed_record)
 			dispatched += 1
 			continue
+
 		if delivery_kind == "message":
 			var decoded_record := decode_record(
 				subscription["package_name"],
 				subscription["message_name"],
-				record)
+				record
+			)
 			if decoded_record.is_empty():
 				continue
 			var message: Dictionary = decoded_record.get("value", {})
@@ -411,14 +407,13 @@ func _dispatch_record(record: Dictionary) -> int:
 			message_received.emit(subscription_id, message, decoded_record)
 			dispatched += 1
 			continue
+
 		if callback.is_valid():
 			callback.call(record)
 		raw_message_received.emit(subscription_id, record)
 		dispatched += 1
-	return dispatched
 
-func _ensure_native_nodes() -> bool:
-	return _ensure_endpoint() and _ensure_codecs()
+	return dispatched
 
 func _ensure_endpoint() -> bool:
 	if _endpoint != null:
@@ -435,18 +430,61 @@ func _ensure_endpoint() -> bool:
 	_endpoint.direction = direction
 	return true
 
+func _ensure_codec_node() -> bool:
+	if _codec_node != null and _codecs != null:
+		return true
+
+	if codec_node_path.is_empty():
+		_last_error_text = "HakoniwaCodecNode path is empty"
+		return false
+
+	_codec_node = get_node_or_null(codec_node_path)
+	if _codec_node == null:
+		_last_error_text = "HakoniwaCodecNode not found: %s" % String(codec_node_path)
+		return false
+
+	if not _codec_node.has_method("get_registry"):
+		_last_error_text = "HakoniwaCodecNode has no get_registry()"
+		return false
+
+	if not _codec_node.has_method("get_message_script_roots"):
+		_last_error_text = "HakoniwaCodecNode has no get_message_script_roots()"
+		return false
+
+	if not ("is_ready" in _codec_node):
+		_last_error_text = "HakoniwaCodecNode has no is_ready property"
+		return false
+
+	if not _codec_node.is_ready:
+		var codec_error := ""
+		if "last_error" in _codec_node:
+			codec_error = str(_codec_node.last_error)
+		_last_error_text = "HakoniwaCodecNode is not ready: %s" % codec_error
+		return false
+
+	_codecs = _codec_node.get_registry()
+	if _codecs == null:
+		_last_error_text = "HakoniwaCodecNode returned null registry"
+		return false
+
+	_last_error_text = ""
+	return true
+
 func _ensure_codecs() -> bool:
 	if _codecs != null:
 		return true
-	if not ClassDB.class_exists("HakoniwaCodecRegistry"):
-		_last_error_text = "HakoniwaCodecRegistry is not registered"
-		return false
-	_codecs = ClassDB.instantiate("HakoniwaCodecRegistry") as Node
-	if _codecs == null:
-		_last_error_text = "HakoniwaCodecRegistry could not be instantiated"
-		return false
-	add_child(_codecs)
-	return true
+	return _ensure_codec_node()
+
+func _get_message_script_roots() -> PackedStringArray:
+	if not _ensure_codec_node():
+		return PackedStringArray()
+	var roots = _codec_node.get_message_script_roots()
+	if typeof(roots) == TYPE_PACKED_STRING_ARRAY:
+		return roots
+	if typeof(roots) == TYPE_ARRAY:
+		return PackedStringArray(roots)
+	_last_error_text = "HakoniwaCodecNode returned invalid message_script_roots"
+	return PackedStringArray()
 
 func _update_endpoint_error(context: String) -> void:
 	if _endpoint == null:
@@ -460,42 +498,27 @@ func _update_endpoint_error(context: String) -> void:
 func _update_codec_error(context: String) -> void:
 	if _codecs == null:
 		return
-	var error_text: String = _codecs.get_last_error()
+	var error_text: String = ""
+	if _codecs.has_method("get_last_error"):
+		error_text = _codecs.get_last_error()
 	if error_text.is_empty():
 		_last_error_text = ""
 	else:
 		_last_error_text = "%s failed: %s" % [context, error_text]
 
-func _load_codec_gdextension(plugin_path: String) -> bool:
-	var gdextension_path := _to_codec_gdextension_path(plugin_path)
-	if gdextension_path.is_empty():
-		return true
-	var extension: Resource = load(gdextension_path)
-	if extension == null:
-		_last_error_text = "load_codec_gdextension failed: %s" % gdextension_path
-		return false
-	_codec_extension_resources.append(extension)
-	_last_error_text = ""
-	return true
-
-func _to_codec_gdextension_path(plugin_path: String) -> String:
-	if plugin_path.is_empty():
-		return ""
-	if plugin_path.ends_with(".gdextension"):
-		return plugin_path
-	if plugin_path.ends_with(".dylib") or plugin_path.ends_with(".so") or plugin_path.ends_with(".dll"):
-		var ext_index := plugin_path.rfind(".")
-		if ext_index >= 0:
-			return plugin_path.substr(0, ext_index) + ".gdextension"
-		return ""
-	return plugin_path + ".gdextension"
-
 func _load_message_script(package_name: String, message_name: String) -> GDScript:
-	for root in message_script_roots:
-		var script_path := "%s/%s/%s.gd" % [root, package_name, message_name]
+	var roots := _get_message_script_roots()
+	if roots.is_empty():
+		_last_error_text = "message script roots are empty"
+		return null
+
+	for root in roots:
+		var normalized_root := String(root).trim_suffix("/")
+		var script_path := "%s/%s/%s.gd" % [normalized_root, package_name, message_name]
 		var script := load(script_path) as GDScript
 		if script != null:
 			return script
+
 	_last_error_text = "message script not found: %s/%s" % [package_name, message_name]
 	return null
 
@@ -557,10 +580,12 @@ func _resolve_typed_binding(robot: String, pdu_name: String) -> Dictionary:
 			continue
 		if pdu_entry.get("name", "") != pdu_name:
 			continue
+
 		var type_name: String = pdu_entry.get("type", "")
 		if not type_name.contains("/"):
 			_last_error_text = "typed binding resolution failed: invalid type name: %s" % type_name
 			return {}
+
 		var parts := type_name.split("/", false, 1)
 		var binding := {
 			"robot": robot,

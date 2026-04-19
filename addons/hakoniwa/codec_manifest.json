@@ -1,0 +1,21 @@
+{
+    "message_script_roots": [
+        "res://addons/hakoniwa_msgs/"
+    ],
+    "extensions": [
+        "res://addons/hakoniwa/codecs/builtin_interfaces_codec.gdextension",
+        "res://addons/hakoniwa/codecs/can_msgs_codec.gdextension",
+        "res://addons/hakoniwa/codecs/drone_srv_msgs_codec.gdextension",
+        "res://addons/hakoniwa/codecs/ev3_msgs_codec.gdextension",
+        "res://addons/hakoniwa/codecs/geometry_msgs_codec.gdextension",
+        "res://addons/hakoniwa/codecs/hako_mavlink_msgs_codec.gdextension",
+        "res://addons/hakoniwa/codecs/hako_mavlink2_msgs_codec.gdextension",
+        "res://addons/hakoniwa/codecs/hako_msgs_codec.gdextension",
+        "res://addons/hakoniwa/codecs/hako_srv_msgs_codec.gdextension",
+        "res://addons/hakoniwa/codecs/mavros_msgs_codec.gdextension",
+        "res://addons/hakoniwa/codecs/nav_msgs_codec.gdextension",
+        "res://addons/hakoniwa/codecs/sensor_msgs_codec.gdextension",
+        "res://addons/hakoniwa/codecs/std_msgs_codec.gdextension",
+        "res://addons/hakoniwa/codecs/tf2_msgs_codec.gdextension"
+    ]
+}

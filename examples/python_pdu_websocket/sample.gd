@@ -3,36 +3,22 @@ extends Node
 @onready var endpoint: HakoniwaEndpointNode = $"../HakoniwaEndpointNode"
 
 var _motor_endpoint = null
-var _pos_endpoint = null
 var _pos_subscription_id := -1
 var _send_count := 0
 var _send_timer := 0.0
 var _endpoint_ready := false
 
-
 func _ready() -> void:
 	if endpoint == null:
 		push_error("HakoniwaEndpointNode is required")
 		return
-	if endpoint.message_script_roots.is_empty():
-		endpoint.message_script_roots = PackedStringArray([
-			"res://addons/hakoniwa_msgs"
-		])
-	if not endpoint.has_codec("geometry_msgs", "Twist"):
-		if not endpoint.load_codec_plugin("res://addons/hakoniwa/codecs/geometry_msgs_codec"):
-			push_error(endpoint.get_last_error_text())
-			return
-	if endpoint.message_script_roots.is_empty():
-    	endpoint.message_script_roots = PackedStringArray([
-                "res://addons/hakoniwa_msgs"
-    ])
+		
 	endpoint.endpoint_ready.connect(_on_endpoint_ready)
 
 
 func _on_endpoint_ready() -> void:
 	_motor_endpoint = endpoint.get_typed_endpoint("Robot", "motor")
-	_pos_endpoint = endpoint.get_typed_endpoint("Robot", "pos")
-	if _motor_endpoint == null or _pos_endpoint == null:
+	if _motor_endpoint == null:
 		push_error(endpoint.get_last_error_text())
 		return
 
@@ -80,13 +66,6 @@ func _process(delta: float) -> void:
 		_send_count += 1
 	else:
 		push_error(endpoint.get_last_error_text())
-
-
-func _exit_tree() -> void:
-	if endpoint == null:
-		return
-	endpoint.stop_endpoint()
-	endpoint.close_endpoint()
 
 
 func _on_pos_message(message) -> void:
