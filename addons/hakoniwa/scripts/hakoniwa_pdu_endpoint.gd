@@ -6,18 +6,19 @@ const HakoniwaTypedEndpoint = preload("res://addons/hakoniwa/scripts/hakoniwa_ty
 signal raw_message_received(subscription_id, record)
 signal message_received(subscription_id, message, record)
 signal typed_message_received(subscription_id, typed_value, record)
+signal endpoint_ready
 
 @export var config_path: String = ""
 @export var codec_plugins: PackedStringArray = []
-@export var message_script_roots: PackedStringArray = PackedStringArray([
-	"res://addons/hakoniwa_msgs"
-])
 @export var endpoint_name: String = "hakoniwa_godot_endpoint"
 @export var direction: int = 2
-@export var auto_open_on_ready: bool = false
 @export var auto_start_on_ready: bool = false
 @export var auto_process_recv_events: bool = false
 @export var auto_close_on_exit: bool = true
+@export_group("Advanced")
+@export var message_script_roots: PackedStringArray = PackedStringArray([
+	"res://addons/hakoniwa_msgs"
+])
 
 var _endpoint: Node = null
 var _codecs: Node = null
@@ -35,12 +36,10 @@ func _ready() -> void:
 	if codec_plugins.size() > 0 and load_configured_codecs() != codec_plugins.size():
 		push_error(_last_error_text)
 		return
-	if auto_open_on_ready and not config_path.is_empty():
+	if not config_path.is_empty():
 		if open_endpoint() != 0:
 			push_error(_last_error_text)
 			return
-		if auto_start_on_ready and start_endpoint() != 0:
-			push_error(_last_error_text)
 
 func _process(_delta: float) -> void:
 	if auto_process_recv_events and _endpoint != null and is_running():
@@ -85,6 +84,8 @@ func open_endpoint(path: String = "") -> int:
 	_endpoint.direction = direction
 	var result: int = _endpoint.open(resolved_path)
 	_update_endpoint_error("open_endpoint")
+	if result == 0:
+		call_deferred("_emit_endpoint_ready")
 	return result
 
 func close_endpoint() -> void:
@@ -150,6 +151,16 @@ func get_pending_count() -> int:
 	var count: int = _endpoint.get_pending_count()
 	_update_endpoint_error("get_pending_count")
 	return count
+
+func _emit_endpoint_ready() -> void:
+	endpoint_ready.emit()
+	if auto_start_on_ready and not is_running():
+		if start_endpoint() != 0:
+			push_error(_last_error_text)
+			return
+		if post_start_endpoint() != 0:
+			push_error(_last_error_text)
+			return
 
 func create_pdu_lchannel(robot: String, pdu_name: String) -> int:
 	if not _ensure_endpoint():
@@ -281,11 +292,14 @@ func to_typed_value(package_name: String, message_name: String, value: Dictionar
 	var script := _load_message_script(package_name, message_name)
 	if script == null:
 		return null
-	if not script.has_method("from_dict"):
-		_last_error_text = "typed message script has no from_dict(): %s/%s" % [package_name, message_name]
-		return null
 	_last_error_text = ""
-	return script.call("from_dict", value)
+	var typed_value = script.call("from_dict", value)
+	if typed_value == null:
+		_last_error_text = "to_typed_value failed: from_dict returned null for %s/%s" % [
+			package_name,
+			message_name
+		]
+	return typed_value
 
 func decode_typed_record(package_name: String, message_name: String, record: Dictionary) -> Dictionary:
 	var decoded := decode_record(package_name, message_name, record)

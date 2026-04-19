@@ -1,10 +1,11 @@
 @tool
 extends EditorInspectorPlugin
 
-const TARGET_SCRIPT_PATH := "res://addons/hakoniwa/scripts/hakoniwa_simulation_node.gd"
-const TARGET_PROPERTY := "internal_endpoint_codec_packages"
+const TARGET_SCRIPT_PATH := "res://addons/hakoniwa/scripts/hakoniwa_pdu_endpoint.gd"
+const TARGET_PROPERTY := "codec_plugins"
 const CODEC_DIR := "res://addons/hakoniwa/codecs"
 const CODEC_SUFFIX := "_codec.gdextension"
+const CODEC_PATH_PREFIX := "res://addons/hakoniwa/codecs/"
 
 
 var _editor_plugin: EditorPlugin = null
@@ -14,7 +15,7 @@ func set_editor_plugin(plugin: EditorPlugin) -> void:
 	_editor_plugin = plugin
 
 
-class CodecPackageSelector:
+class CodecPluginSelector:
 	extends VBoxContainer
 
 	var _target: Object = null
@@ -44,13 +45,13 @@ class CodecPackageSelector:
 
 		var select_all_button := Button.new()
 		select_all_button.text = "All"
-		select_all_button.tooltip_text = "Select all installed codec packages."
+		select_all_button.tooltip_text = "Select all installed codec plugins."
 		select_all_button.pressed.connect(_select_all)
 		header.add_child(select_all_button)
 
 		var clear_button := Button.new()
 		clear_button.text = "Clear"
-		clear_button.tooltip_text = "Clear all selected codec packages."
+		clear_button.tooltip_text = "Clear all selected codec plugins."
 		clear_button.pressed.connect(_clear_all)
 		header.add_child(clear_button)
 
@@ -59,14 +60,14 @@ class CodecPackageSelector:
 
 		if package_names.is_empty():
 			var empty := Label.new()
-			empty.text = "No installed codec packages found under res://addons/hakoniwa/codecs."
+			empty.text = "No installed codec plugins found under res://addons/hakoniwa/codecs."
 			empty.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			_list_container.add_child(empty)
 			_list_container.visible = not _collapsed
 			return
 
 		var help := Label.new()
-		help.text = "Select codec packages used by the internal SHM endpoint."
+		help.text = "Select codec plugins used by this endpoint."
 		help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_list_container.add_child(help)
 
@@ -108,11 +109,11 @@ class CodecPackageSelector:
 		for package_name in package_names:
 			var checkbox: CheckBox = _checkboxes[package_name]
 			if checkbox.button_pressed:
-				selected.append(package_name)
+				selected.append("%s%s_codec" % [CODEC_PATH_PREFIX, package_name])
 		var previous_value = _target.get(_property_name)
 		if _editor_plugin != null:
 			var undo_redo = _editor_plugin.get_undo_redo()
-			undo_redo.create_action("Set Internal Endpoint Codec Packages")
+			undo_redo.create_action("Set Codec Plugins")
 			undo_redo.add_do_property(_target, _property_name, selected)
 			undo_redo.add_undo_property(_target, _property_name, previous_value)
 			undo_redo.commit_action()
@@ -130,7 +131,7 @@ class CodecPackageSelector:
 		_update_toggle_text()
 
 	func _toggle_label() -> String:
-		return "Internal Endpoint Codec Packages (%d selected)%s" % [
+		return "Codec Plugins (%d selected)%s" % [
 			_selected_count(),
 			" ▸" if _collapsed else " ▾"
 		]
@@ -153,7 +154,9 @@ class CodecPackageSelector:
 		var selected_map := {}
 		var current_value = _target.get(_property_name)
 		for value in current_value:
-			selected_map[str(value)] = true
+			var path := str(value)
+			if path.begins_with(CODEC_PATH_PREFIX) and path.ends_with("_codec"):
+				selected_map[path.trim_prefix(CODEC_PATH_PREFIX).trim_suffix("_codec")] = true
 		for package_name in _checkboxes.keys():
 			var checkbox: CheckBox = _checkboxes[package_name]
 			checkbox.button_pressed = selected_map.has(package_name)
@@ -178,7 +181,7 @@ func _parse_property(object: Object,
 		_wide: bool) -> bool:
 	if name != TARGET_PROPERTY:
 		return false
-	var selector := CodecPackageSelector.new()
+	var selector := CodecPluginSelector.new()
 	selector.setup(object, name, _find_installed_codec_packages(), _editor_plugin)
 	add_custom_control(selector)
 	return true

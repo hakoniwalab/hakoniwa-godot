@@ -31,6 +31,33 @@ python examples/python_pdu_websocket/python_websocket_server.py
 python examples/python_pdu_websocket/python_websocket_client.py
 ```
 
+## Godot 側の設定メモ
+
+`HakoniwaEndpointNode` を使う場合、通常は次を設定します。
+
+- `Config Path`
+  - `res://config/endpoint_websocket_client.json`
+- `Codec Plugins`
+  - `geometry_msgs`
+- `Start on Ready`
+  - `On`
+- `Auto Process Recv Events`
+  - `On`
+
+`Message Script Roots` は通常はデフォルトのままで構いません。
+`addons/hakoniwa_msgs` 以外に generated message script を置いている場合だけ変更します。
+
+例:
+
+```gdscript
+endpoint.message_script_roots = PackedStringArray([
+	"res://addons/hakoniwa_msgs"
+])
+```
+
+`sample.gd` は `endpoint_ready` signal を受けて typed endpoint bind と subscription を行う前提です。  
+`config_path` が設定されていれば、endpoint は `_ready()` で自動 `open` されます。
+
 ## 成功時ログ
 
 server:

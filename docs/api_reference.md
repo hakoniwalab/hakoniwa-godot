@@ -90,10 +90,10 @@
 - `codec_plugins: PackedStringArray`
 - `endpoint_name: String`
 - `direction: int`
-- `auto_open_on_ready: bool`
 - `auto_start_on_ready: bool`
 - `auto_process_recv_events: bool`
 - `auto_close_on_exit: bool`
+- `endpoint_ready`
 - `get_backend_name() -> String`
 - `probe_native_backend() -> bool`
 - `open_endpoint(path: String = "") -> int`
