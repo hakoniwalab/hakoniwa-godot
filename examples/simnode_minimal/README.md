@@ -21,6 +21,7 @@
 補足:
 
 - internal endpoint を使う場合、`get_endpoint()` や subscription 作成は `_ready()` 直後ではなく `simulation_ready` signal を起点にする
+- typed message や internal endpoint を使う場合は、別途 `HakoniwaCodecNode` を置いて `HakoniwaSimNode.codec_node_path` を設定する
 
 期待する最小ログ:
 
@@ -40,6 +41,8 @@ step simtime=33334 world=40000
 - `Auto Initialize on Ready`: オン
 - `Auto Tick on Physics Process`: オン
 - `Enable Physics Time Sync`: オン
+
+この最小例では internal endpoint を使わないため、`HakoniwaCodecNode` は不要です。
 
 設定例:
 

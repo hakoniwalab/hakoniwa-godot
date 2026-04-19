@@ -33,10 +33,8 @@ const SYNC_STATE_TERMINATED := 6
 
 @export var asset_name: String = ""
 @export var use_internal_shm_endpoint: bool = false
-@export var shm_endpoint_config_path: String = ""
-@export var internal_endpoint_codec_packages: PackedStringArray = PackedStringArray([
-	"geometry_msgs"
-])
+@export_file("*.json") var shm_endpoint_config_path: String = ""
+@export var codec_node_path: NodePath
 @export var delta_time_usec: int = 20000
 @export var auto_sync_delta_time_with_physics: bool = true
 @export var auto_initialize_on_ready: bool = false
@@ -44,6 +42,7 @@ const SYNC_STATE_TERMINATED := 6
 @export var auto_tick_on_physics_process: bool = false
 @export var enable_physics_time_sync: bool = false
 @export var debug_time_sync_logs: bool = false
+@export var debug_init_logs: bool = false
 
 var _core_asset: Node = null
 var _internal_endpoint: Node = null
@@ -54,14 +53,24 @@ var _sync_state: int = SYNC_STATE_UNINITIALIZED
 var _blocked_tree_pause_applied: bool = false
 var _last_blocked_next_simtime_usec: int = -1
 var _last_blocked_world_time_usec: int = -1
-var internal_endpoint_codec_plugins: PackedStringArray = PackedStringArray()
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	if auto_initialize_on_ready:
-		var result := initialize()
-		if result != 0:
-			push_error(_last_error_text)
+		# SimNode depends on its internal endpoint and shared CodecNode.
+		# Defer initialization so sibling/parent nodes can finish _ready()
+		# and relative NodePath dependencies can settle before we prepare them.
+		_init_log("_ready", "deferred initialize")
+		call_deferred("_initialize_on_ready")
+
+func _initialize_on_ready() -> void:
+	_init_log("_initialize_on_ready.begin")
+	var result := initialize()
+	if result != 0:
+		_init_log("_initialize_on_ready.fail", _last_error_text)
+		push_error(_last_error_text)
+		return
+	_init_log("_initialize_on_ready.done")
 
 func _process(_delta: float) -> void:
 	if _sync_state == SYNC_STATE_UNINITIALIZED or _sync_state == SYNC_STATE_TERMINATED:
@@ -87,15 +96,19 @@ func set_callbacks(callbacks) -> void:
 	_callbacks = callbacks
 
 func initialize() -> int:
+	_init_log("initialize.begin", "asset_name=%s" % asset_name)
 	if not _ensure_core_asset():
+		_init_log("initialize.fail.core_asset", _last_error_text)
 		return -1
 	if asset_name.is_empty():
 		_last_error_text = "initialize failed: asset_name is empty"
+		_init_log("initialize.fail", _last_error_text)
 		return -1
 	if enable_physics_time_sync and auto_sync_delta_time_with_physics:
 		var synced_delta_time_usec := _get_physics_delta_time_usec()
 		if synced_delta_time_usec <= 0:
 			_last_error_text = "initialize failed: physics_ticks_per_second must be > 0"
+			_init_log("initialize.fail", _last_error_text)
 			return -1
 		delta_time_usec = synced_delta_time_usec
 		_debug_log("auto-sync delta_time_usec=%d physics_ticks_per_second=%d" % [
@@ -104,28 +117,36 @@ func initialize() -> int:
 		])
 	if delta_time_usec <= 0:
 		_last_error_text = "initialize failed: delta_time_usec must be > 0"
+		_init_log("initialize.fail", _last_error_text)
 		return -1
 	if use_internal_shm_endpoint:
+		shm_endpoint_config_path = shm_endpoint_config_path.strip_edges()
+		_init_log("initialize.internal_endpoint.begin", shm_endpoint_config_path)
 		if shm_endpoint_config_path.is_empty():
 			_last_error_text = "initialize failed: shm_endpoint_config_path is empty"
+			_init_log("initialize.fail", _last_error_text)
+			return -1
+		if codec_node_path.is_empty():
+			_last_error_text = "initialize failed: codec_node_path is empty"
+			_init_log("initialize.fail", _last_error_text)
 			return -1
 		if not _ensure_internal_endpoint():
+			_init_log("initialize.fail.internal_endpoint", _last_error_text)
 			return -1
-		var loaded_codecs: int = _internal_endpoint.load_configured_codecs()
-		if loaded_codecs != _internal_endpoint.codec_plugins.size():
+		if not _internal_endpoint.prepare():
 			_last_error_text = _internal_endpoint.get_last_error_text()
+			_init_log("initialize.fail.internal_endpoint_prepare", _last_error_text)
 			return -1
-		var open_result: int = _internal_endpoint.open_endpoint(shm_endpoint_config_path)
-		if open_result != 0:
-			_last_error_text = _internal_endpoint.get_last_error_text()
-			return open_result
-		print("internal SHM endpoint initialized with config: %s" % shm_endpoint_config_path)
+		_init_log("initialize.internal_endpoint.done", shm_endpoint_config_path)
 	var result: int = _core_asset.initialize_asset(asset_name)
 	_update_error("initialize")
 	if result == 0:
 		_current_simtime_usec = 0
 		_sync_state = SYNC_STATE_STOPPED
+		_init_log("initialize.done", "sync_state=STOPPED")
 		call_deferred("_emit_initialized")
+	else:
+		_init_log("initialize.fail.core_asset_initialize", _last_error_text)
 	return result
 
 func shutdown() -> void:
@@ -197,7 +218,7 @@ func get_typed_endpoint(_robot: String, _pdu_name: String) -> Variant:
 	if not use_internal_shm_endpoint:
 		_last_error_text = "get_typed_endpoint failed: internal SHM endpoint is disabled"
 		return null
-	if not _ensure_internal_endpoint():
+	if not _ensure_internal_endpoint_prepared():
 		return null
 	var typed_endpoint = _internal_endpoint.get_typed_endpoint(_robot, _pdu_name)
 	_last_error_text = _internal_endpoint.get_last_error_text()
@@ -207,12 +228,13 @@ func get_endpoint() -> Variant:
 	if not use_internal_shm_endpoint:
 		_last_error_text = "get_endpoint failed: internal SHM endpoint is disabled"
 		return null
-	if not _ensure_internal_endpoint():
+	if not _ensure_internal_endpoint_prepared():
 		return null
 	_last_error_text = ""
 	return _internal_endpoint
 
 func _emit_initialized() -> void:
+	_init_log("simulation_ready.emit")
 	simulation_ready.emit()
 
 func _tick_internal(allow_step: bool) -> bool:
@@ -434,6 +456,14 @@ func _debug_log(message: String) -> void:
 		return
 	print("HAKO_SIM_DEBUG: %s" % message)
 
+func _init_log(stage: String, detail: String = "") -> void:
+	if not debug_init_logs:
+		return
+	if detail.is_empty():
+		print("HAKO_SIM_INIT[%s]: %s" % [asset_name, stage])
+	else:
+		print("HAKO_SIM_INIT[%s]: %s: %s" % [asset_name, stage, detail])
+
 func _ensure_core_asset() -> bool:
 	if _core_asset != null:
 		return true
@@ -456,28 +486,24 @@ func _ensure_internal_endpoint() -> bool:
 		return false
 	add_child(_internal_endpoint)
 	_internal_endpoint.config_path = shm_endpoint_config_path
+	var codec_node := get_node_or_null(codec_node_path)
+	if codec_node == null:
+		_last_error_text = "HakoniwaCodecNode not found: %s" % String(codec_node_path)
+		_internal_endpoint.queue_free()
+		_internal_endpoint = null
+		return false
+	_internal_endpoint.codec_node_path = _internal_endpoint.get_path_to(codec_node)
 	_internal_endpoint.endpoint_name = "%s_shm_endpoint" % asset_name
 	_internal_endpoint.direction = 2
-	_internal_endpoint.codec_plugins = _resolve_internal_endpoint_codec_plugins()
 	return true
 
-func _resolve_internal_endpoint_codec_plugins() -> PackedStringArray:
-	var resolved := PackedStringArray()
-	for package_name in internal_endpoint_codec_packages:
-		var trimmed := package_name.strip_edges()
-		if trimmed.is_empty():
-			continue
-		if trimmed.begins_with("res://"):
-			resolved.append(trimmed)
-			continue
-		resolved.append("res://addons/hakoniwa/codecs/%s_codec" % trimmed)
-	for plugin_path in internal_endpoint_codec_plugins:
-		var trimmed := plugin_path.strip_edges()
-		if trimmed.is_empty():
-			continue
-		if not resolved.has(trimmed):
-			resolved.append(trimmed)
-	return resolved
+func _ensure_internal_endpoint_prepared() -> bool:
+	if not _ensure_internal_endpoint():
+		return false
+	if not _internal_endpoint.prepare():
+		_last_error_text = _internal_endpoint.get_last_error_text()
+		return false
+	return true
 
 func _update_error(context: String) -> void:
 	if _core_asset == null:

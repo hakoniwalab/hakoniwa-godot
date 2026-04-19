@@ -8,37 +8,58 @@ signal message_received(subscription_id, message, record)
 signal typed_message_received(subscription_id, typed_value, record)
 signal endpoint_ready
 
-@export var config_path: String = ""
+@export_file("*.json") var config_path: String = ""
 @export var codec_node_path: NodePath
 @export var endpoint_name: String = "hakoniwa_godot_endpoint"
 @export var direction: int = 2
 @export var auto_start_on_ready: bool = false
 @export var auto_process_recv_events: bool = false
 @export var auto_close_on_exit: bool = true
+@export var debug_init_logs: bool = false
 
 var _endpoint: Node = null
 var _codec_node: Node = null
 var _codecs: Node = null
 var _last_error_text: String = ""
+var _prepared: bool = false
 var _typed_binding_cache: Dictionary = {}
 var _subscriptions: Dictionary = {}
 var _registered_recv_keys: Dictionary = {}
 var _next_subscription_id: int = 1
 
 func _ready() -> void:
-	call_deferred("_late_ready")
+	_init_log("_ready", "deferred prepare")
+	call_deferred("_prepare_on_ready")
 
-func _late_ready() -> void:
+func _prepare_on_ready() -> void:
+	_init_log("_prepare_on_ready.begin")
+	if not prepare():
+		_init_log("_prepare_on_ready.fail", _last_error_text)
+		push_error(_last_error_text)
+		return
+	_init_log("_prepare_on_ready.done")
+
+func prepare() -> bool:
+	if _prepared:
+		_init_log("prepare.skip", "already prepared")
+		return true
+	_init_log("prepare.begin")
 	if not _ensure_codec_node():
-		push_error(_last_error_text)
-		return
+		_init_log("prepare.fail.codec_node", _last_error_text)
+		return false
+	_init_log("prepare.codec_node_ready", str(codec_node_path))
 	if not _ensure_endpoint():
-		push_error(_last_error_text)
-		return
+		_init_log("prepare.fail.endpoint", _last_error_text)
+		return false
+	_init_log("prepare.endpoint_ready", endpoint_name)
 	if not config_path.is_empty():
+		_init_log("prepare.open", config_path)
 		if open_endpoint() != 0:
-			push_error(_last_error_text)
-			return
+			_init_log("prepare.fail.open", _last_error_text)
+			return false
+	_prepared = true
+	_init_log("prepare.done")
+	return true
 
 func _process(_delta: float) -> void:
 	if auto_process_recv_events and _endpoint != null and is_running():
@@ -79,12 +100,21 @@ func open_endpoint(path: String = "") -> int:
 		resolved_path = config_path
 	else:
 		config_path = resolved_path
+	resolved_path = resolved_path.strip_edges()
+	if resolved_path.is_empty():
+		_last_error_text = "open_endpoint failed: config_path is empty"
+		_init_log("open_endpoint.fail", _last_error_text)
+		return -1
+	config_path = resolved_path
 	_endpoint.endpoint_name = endpoint_name
 	_endpoint.direction = direction
 	var result: int = _endpoint.open(resolved_path)
 	_update_endpoint_error("open_endpoint")
 	if result == 0:
+		_init_log("open_endpoint.ok", resolved_path)
 		call_deferred("_emit_endpoint_ready")
+	else:
+		_init_log("open_endpoint.fail", _last_error_text)
 	return result
 
 func close_endpoint() -> void:
@@ -152,14 +182,19 @@ func get_pending_count() -> int:
 	return count
 
 func _emit_endpoint_ready() -> void:
+	_init_log("endpoint_ready.emit")
 	endpoint_ready.emit()
 	if auto_start_on_ready and not is_running():
+		_init_log("auto_start.begin")
 		if start_endpoint() != 0:
+			_init_log("auto_start.fail.start", _last_error_text)
 			push_error(_last_error_text)
 			return
 		if post_start_endpoint() != 0:
+			_init_log("auto_start.fail.post_start", _last_error_text)
 			push_error(_last_error_text)
 			return
+		_init_log("auto_start.done")
 
 func create_pdu_lchannel(robot: String, pdu_name: String) -> int:
 	if not _ensure_endpoint():
@@ -521,6 +556,14 @@ func _load_message_script(package_name: String, message_name: String) -> GDScrip
 
 	_last_error_text = "message script not found: %s/%s" % [package_name, message_name]
 	return null
+
+func _init_log(stage: String, detail: String = "") -> void:
+	if not debug_init_logs:
+		return
+	if detail.is_empty():
+		print("HAKO_ENDPOINT_INIT[%s]: %s" % [endpoint_name, stage])
+	else:
+		print("HAKO_ENDPOINT_INIT[%s]: %s: %s" % [endpoint_name, stage, detail])
 
 func _resolve_typed_binding(robot: String, pdu_name: String) -> Dictionary:
 	var cache_key := "%s::%s" % [robot, pdu_name]

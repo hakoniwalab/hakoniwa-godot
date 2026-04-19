@@ -5,6 +5,19 @@
 
 まず最短で `HakoniwaSimNode` を動かしたい場合は、先に [quick_start.md](quick_start.md) を参照してください。
 
+## ノード責務
+
+現在の利用者向け構成は次の 3 つです。
+
+- `HakoniwaCodecNode`
+  - codec と typed message script の所有者
+- `HakoniwaEndpointNode`
+  - 通信専用ノード
+- `HakoniwaSimNode`
+  - 時刻同期ノード
+
+`HakoniwaEndpointNode` と `HakoniwaSimNode` は、codec を自前では持たず、`HakoniwaCodecNode` を参照します。
+
 ## 対応環境
 
 - Godot `4.6.1` (mono)
@@ -59,7 +72,8 @@ Godot Editor で対象プロジェクトを開き、次を確認します。
 
 ### 4. `HakoniwaSimNode` を配置する
 
-最初の確認では、シーンへ `HakoniwaSimNode` を 1 つ配置します。
+最初の確認では、シーンへ `HakoniwaSimNode` を 1 つ配置します。  
+internal endpoint や typed message を使う場合は、あわせて `HakoniwaCodecNode` も配置します。
 
 1. シーンを開く
 2. `Node` を追加
@@ -76,6 +90,8 @@ Godot Editor で対象プロジェクトを開き、次を確認します。
   - internal SHM endpoint を使う場合に有効化する
 - `shm_endpoint_config_path`
   - internal SHM endpoint を使う場合の config path
+- `codec_node_path`
+  - internal endpoint が参照する `HakoniwaCodecNode`
 
 設定項目の意味:
 
@@ -97,10 +113,9 @@ Godot Editor で対象プロジェクトを開き、次を確認します。
 - `shm_endpoint_config_path`
   - internal SHM endpoint の設定ファイル
   - `use_internal_shm_endpoint = true` のときに必要
-- `internal_endpoint_codec_packages`
-  - internal SHM endpoint が使う message package の一覧
-  - `use_internal_shm_endpoint = true` のときに、扱う message type に対応する package 名を入れる
-  - 例: `std_msgs`
+- `codec_node_path`
+  - `HakoniwaCodecNode` への `NodePath`
+  - internal endpoint が codec / typed script を解決するために必要
 - `debug_time_sync_logs`
   - `true` にすると、`BLOCKED_BY_WORLD_TIME` や resume の debug log を出す
 
@@ -109,8 +124,17 @@ Godot Editor で対象プロジェクトを開き、次を確認します。
 - 通常利用では、`HakoniwaSimNode` は Inspector で設定して使う
 - headless 実験では、example 側で環境変数から上書きしている場合がある
 - `enable_physics_time_sync` を使う場合、UI を止めたくないノードは `process_mode = Always` を明示設定する
-- `internal_endpoint_codec_packages` は Inspector に表示されるが、実際に必要になるのは internal SHM endpoint を使う場合だけ
-- 入力するのは `res://...` の plugin path ではなく package 名
+
+### 4.1 `HakoniwaCodecNode` を配置する
+
+typed message や endpoint 通信を使う場合は、同じ scene に `HakoniwaCodecNode` を置きます。
+
+- `codec_manifest_path`
+  - 通常は `res://addons/hakoniwa/codec_manifest.json`
+- `load_on_ready`
+  - 通常は `On`
+
+`HakoniwaEndpointNode` / `HakoniwaSimNode` は、この node を `codec_node_path` で参照します。
 
 ### 5. 利用側スクリプトを追加する
 
@@ -181,14 +205,7 @@ bash tools/run_python_pdu_minimal_controller.sh
 Godot 側は完成済み project ではなく、既存 project に `sample.gd` と `config/` を持ち込んで試します。  
 Python controller には `config/endpoint_shm_callback_with_pdu.json` を渡します。  
 Godot 側は `config/endpoint_shm_with_pdu.json` を internal endpoint 用に使います。
-
-Inspector で internal SHM endpoint を設定する場合は、`Internal Endpoint Codec Packages` に internal endpoint で使う message package を入れてください。
-
-例:
-
-```text
-geometry_msgs
-```
+Godot scene には `HakoniwaCodecNode` を置き、`HakoniwaSimNode.codec_node_path` で参照してください。
 
 ## integration test を試す場合
 

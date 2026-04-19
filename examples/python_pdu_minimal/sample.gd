@@ -1,6 +1,7 @@
 extends Node
 
 @onready var sim: HakoniwaSimNode = $"../HakoniwaSimNode"
+var _endpoint = null
 var _motor_endpoint = null
 var _pos_endpoint = null
 var _motor_subscription_id := -1
@@ -14,14 +15,17 @@ func _ready() -> void:
 	sim.simulation_step.connect(_on_simulation_step)
 
 func _on_simulation_ready() -> void:
-	var endpoint = sim.get_endpoint()
-	if endpoint == null:
+	_endpoint = sim.get_endpoint()
+	if _endpoint == null:
 		push_error(sim.get_last_error_text())
 		return
-	var motor_ret = endpoint.create_pdu_lchannel("Robot", "motor")
-	var pos_ret = endpoint.create_pdu_lchannel("Robot", "pos")
+	var motor_ret = _endpoint.create_pdu_lchannel("Robot", "motor")
+	var pos_ret = _endpoint.create_pdu_lchannel("Robot", "pos")
 	print("INFO: create motor pdu channel: ret = ", motor_ret)
 	print("INFO: create pos pdu channel: ret = ", pos_ret)
+	if motor_ret != 0 or pos_ret != 0:
+		push_error(_endpoint.get_last_error_text())
+		return
 	_motor_endpoint = sim.get_typed_endpoint("Robot", "motor")
 	_pos_endpoint = sim.get_typed_endpoint("Robot", "pos")
 	if _motor_endpoint == null or _pos_endpoint == null:
@@ -29,13 +33,13 @@ func _on_simulation_ready() -> void:
 		print(sim.get_last_error_text())
 		return
 
-	_motor_subscription_id = endpoint.create_subscription_typed(
+	_motor_subscription_id = _endpoint.create_subscription_typed(
 		"Robot",
 		"motor",
 		Callable(self, "_on_motor_message"))
 	if _motor_subscription_id < 0:
 		print("sample subscribe failed")
-		print(endpoint.get_last_error_text())
+		print(_endpoint.get_last_error_text())
 		return
 
 func _on_simulation_started() -> void:
@@ -67,7 +71,10 @@ func _on_simulation_step(simtime_usec: int, world_time_usec: int) -> void:
 				print("pos=%s" % JSON.stringify(pos_dict))
 			else:
 				print("sample pos send failed: ", send_ret)
-				print(sim.get_last_error_text())
+				if _endpoint != null:
+					print(_endpoint.get_last_error_text())
+				else:
+					print(sim.get_last_error_text())
 		_send_count = _send_count + 1
 	print("step simtime=%d world=%d" % [simtime_usec, world_time_usec])
 

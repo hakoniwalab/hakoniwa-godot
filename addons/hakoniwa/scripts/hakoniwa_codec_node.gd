@@ -7,6 +7,7 @@ signal codec_manifest_failed(error_message: String)
 @export_file("*.json") var codec_manifest_path: String = "res://addons/hakoniwa/codec_manifest.json"
 @export var load_on_ready: bool = true
 @export var fail_fast: bool = true
+@export var debug_init_logs: bool = false
 
 var is_ready: bool = false
 var last_error: String = ""
@@ -18,9 +19,11 @@ var _registry: Node = null
 
 func _ready() -> void:
 	if load_on_ready:
+		_init_log("_ready", "load_on_ready=true")
 		initialize()
 
 func initialize() -> bool:
+	_init_log("initialize.begin", "manifest=%s" % codec_manifest_path)
 	is_ready = false
 	last_error = ""
 	loaded_extensions = PackedStringArray()
@@ -28,8 +31,10 @@ func initialize() -> bool:
 	message_script_roots = PackedStringArray()
 
 	if not _ensure_registry():
+		_init_log("initialize.fail", last_error)
 		push_error(last_error)
 		return false
+	_init_log("initialize.registry_ready")
 		
 	if codec_manifest_path.is_empty():
 		return _fail("codec_manifest_path is empty")
@@ -71,6 +76,7 @@ func initialize() -> bool:
 		message_script_roots = PackedStringArray([
 			"res://addons/hakoniwa_msgs/"
 		])
+	_init_log("initialize.message_script_roots", str(message_script_roots))
 
 	if not manifest.has("extensions"):
 		return _fail("Codec manifest has no 'extensions': %s" % codec_manifest_path)
@@ -124,6 +130,10 @@ func initialize() -> bool:
 			push_warning(registry_error)
 
 	is_ready = true
+	_init_log(
+		"initialize.done",
+		"loaded=%d skipped=%d" % [loaded_extensions.size(), skipped_extensions.size()]
+	)
 	codec_manifest_loaded.emit()
 	return true
 
@@ -168,6 +178,15 @@ func _to_registry_plugin_path(extension_path: String) -> String:
 func _fail(message: String) -> bool:
 	is_ready = false
 	last_error = message
+	_init_log("initialize.fail", message)
 	push_error(message)
 	codec_manifest_failed.emit(message)
 	return false
+
+func _init_log(stage: String, detail: String = "") -> void:
+	if not debug_init_logs:
+		return
+	if detail.is_empty():
+		print("HAKO_CODEC_INIT: %s" % stage)
+	else:
+		print("HAKO_CODEC_INIT: %s: %s" % [stage, detail])

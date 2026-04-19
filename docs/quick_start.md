@@ -34,6 +34,17 @@
 
 - [../examples/python_pdu_minimal/README.md](../examples/python_pdu_minimal/README.md)
 
-### 4. smoke / integration test を回したい
+### 4. SimNode なしで WebSocket PDU 通信を試したい
+
+- [../examples/python_pdu_websocket/README.md](../examples/python_pdu_websocket/README.md)
+
+ここでは、
+
+- `HakoniwaCodecNode`
+- `HakoniwaEndpointNode`
+
+だけを既存 Godot project に置いて、WebSocket transport で `geometry_msgs/Twist` を送受信します。
+
+### 5. smoke / integration test を回したい
 
 - [../tests/README.md](../tests/README.md)

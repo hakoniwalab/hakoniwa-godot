@@ -87,6 +87,17 @@ hakoniwa-godot は 3 つのコア機能で構成されます。
 | `hakoniwa-pdu-endpoint` | PDU ベースのデータ通信 (`latest` / `queue`) | ✅ Done |
 | `hakoniwa-pdu-rpc` | RPC による外部システムの制御・状態取得 | 🔜 Next |
 
+Godot 側の node 責務は次のように分けます。
+
+- `HakoniwaCodecNode`
+  - codec と typed message script の所有者
+- `HakoniwaEndpointNode`
+  - 通信専用ノード
+- `HakoniwaSimNode`
+  - 時刻同期ノード
+
+`HakoniwaEndpointNode` と `HakoniwaSimNode` は、codec を自前ロードせず `HakoniwaCodecNode` を参照します。
+
 ---
 
 ## 📡 Data Handling Modes

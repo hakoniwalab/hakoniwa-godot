@@ -1,9 +1,12 @@
 # Python PDU WebSocket Example
 
-このディレクトリには、`hakoniwa-pdu-endpoint` の WebSocket transport で `geometry_msgs/Twist` を双方向にやり取りする最小 Python 素材を置きます。
+このディレクトリには、`hakoniwa-pdu-endpoint` の WebSocket transport で `geometry_msgs/Twist` を双方向にやり取りする最小素材を置きます。
 
 含まれるもの:
 
+- `sample.gd`
+  - Godot 側の最小 script
+  - `HakoniwaCodecNode` と `HakoniwaEndpointNode` を前提に、`motor` を送信し `pos` を受信する
 - `python_websocket_server.py`
   - WebSocket server 側
   - `motor` を受信して `pos` を返し続ける
@@ -33,30 +36,34 @@ python examples/python_pdu_websocket/python_websocket_client.py
 
 ## Godot 側の設定メモ
 
-`HakoniwaEndpointNode` を使う場合、通常は次を設定します。
+この example では、scene に次の 2 つを置く前提です。
+
+- `HakoniwaCodecNode`
+- `HakoniwaEndpointNode`
+
+`HakoniwaCodecNode` は codec と typed message script の所有者です。  
+`HakoniwaEndpointNode` は通信だけを担当し、`CodecNode` を参照します。
+
+### `HakoniwaCodecNode`
+
+- `Codec Manifest Path`
+  - `res://addons/hakoniwa/codec_manifest.json`
+- `Load On Ready`
+  - `On`
+
+### `HakoniwaEndpointNode`
 
 - `Config Path`
   - `res://config/endpoint_websocket_client.json`
-- `Codec Plugins`
-  - `geometry_msgs`
+- `Codec Node Path`
+  - `../HakoniwaCodecNode`
 - `Start on Ready`
   - `On`
 - `Auto Process Recv Events`
   - `On`
 
-`Message Script Roots` は通常はデフォルトのままで構いません。
-`addons/hakoniwa_msgs` 以外に generated message script を置いている場合だけ変更します。
-
-例:
-
-```gdscript
-endpoint.message_script_roots = PackedStringArray([
-	"res://addons/hakoniwa_msgs"
-])
-```
-
 `sample.gd` は `endpoint_ready` signal を受けて typed endpoint bind と subscription を行う前提です。  
-`config_path` が設定されていれば、endpoint は `_ready()` で自動 `open` されます。
+`config_path` が設定されていれば、endpoint は `_ready()` で `prepare()` され、`endpoint_ready` 後に `Start on Ready` が有効なら自動 `start/post_start` まで進みます。
 
 ## 成功時ログ
 
