@@ -1,0 +1,6 @@
+{
+  "name": "godot_core_pro_mujoco_asset_callback_endpoint",
+  "pdu_def_path": "comm/tb3-pdudef-compact.json",
+  "cache": "cache/buffer.json",
+  "comm": "comm/shm_poll_comm.json"
+}
