@@ -51,6 +51,26 @@
 - body / joint 配置差分は `hakoniwa-mbody-registry` 側の入力で吸収する
 - 座標変換はライブラリ側の定義済み変換ルールとして提供する
 
+## 現状
+
+2026-04-30 時点で、以下は実装済みである。
+
+- `addons/hakoniwa_robot_sync`
+  - `HakoniwaRobotSyncController`
+  - `HakoniwaRobotProfileLoader`
+  - `HakoniwaRobotProfileValidator`
+  - `HakoniwaTransformConverter`
+  - `HakoniwaJointStateMapper`
+- `examples/mujoco`
+  - `tb3_reference_sync.gd` は thin wrapper 化済み
+  - `config/robot_sync.profile.json` を直接読む構成へ移行済み
+
+未実装または今後の対象:
+
+- `forge` への統合
+- profile schema の外部ファイル化
+- 2 台目以降の robot での横展開検証
+
 ## 非ゴール
 
 この文書の対象外:
@@ -207,6 +227,21 @@ scene 側 script は最終的に薄くし、controller 自体は scene に置く
 
 `_physics_process()` や `_process()` に個別の joint 反映コードを書かないのが目標である。
 
+TB3 example では、scene 側 script は次の程度に薄くできる。
+
+```gdscript
+extends "res://addons/hakoniwa_robot_sync/scripts/robot_sync_controller.gd"
+
+func _ready() -> void:
+	if sim_node_path.is_empty():
+		sim_node_path = $"../HakoniwaSimNode".get_path()
+	if target_root_path.is_empty():
+		target_root_path = $"../RosToGodot".get_path()
+	if profile_path.is_empty():
+		profile_path = "res://config/robot_sync.profile.json"
+	super._ready()
+```
+
 ## Runtime API の想定
 
 初期案:
@@ -243,6 +278,9 @@ func get_last_error_text() -> String:
 6. step ごとに `process_recv_events()` を呼ぶ
 7. base pose と joint_states を受信する
 8. profile に従って scene node を更新する
+
+現在の controller 実装は、base pose を `target_root_path` の `Transform3D` に適用し、
+joint state は `joint_mappings[].node_path` の `basis` を初期姿勢基準で更新する。
 
 ## Polling 前提
 

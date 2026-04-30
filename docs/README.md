@@ -17,6 +17,6 @@
 - `core_pro_design.md`: `hakoniwa-core-pro` の時間同期設計
 - `core_pro_user_interface.md`: `hakoniwa-core-pro` 統合時の利用者インタフェース原型
 - `core_pro_test_design.md`: `hakoniwa-core-pro` 統合のテスト設計
-- `robot_sync_design.md`: `addons/hakoniwa_robot_sync` と robot profile JSON の設計方針
+- `robot_sync_design.md`: `addons/hakoniwa_robot_sync` の責務、profile JSON、`mbody` 生成物との関係
 
 README には概要と導入手順を置き、設計判断や詳細仕様は `docs/` 側に寄せます。

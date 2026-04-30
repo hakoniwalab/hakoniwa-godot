@@ -98,6 +98,16 @@ Godot 側の node 責務は次のように分けます。
 
 `HakoniwaEndpointNode` と `HakoniwaSimNode` は、codec を自前ロードせず `HakoniwaCodecNode` を参照します。
 
+加えて、robot model の可視化同期用に `addons/hakoniwa_robot_sync` を提供します。
+
+- `HakoniwaRobotSyncController`
+  - `robot_sync.profile.json` を読み込む
+  - `base_link_pos` と `joint_states` を poll で受信する
+  - `target_root_path` 以下の Node3D へ pose / joint を反映する
+
+この addon 自体は robot 固有設定を持たず、`hakoniwa-mbody-registry` が生成した
+`robot_sync.profile.json` を consume するだけです。
+
 ---
 
 ## 📡 Data Handling Modes
@@ -108,6 +118,42 @@ Godot のフレームループとの連携指針:
 |---|---|---|
 | `_process()` | `latest` | 可視化・UI 更新 |
 | `_physics_process()` | `queue` | 状態遷移・ログ・制御 |
+
+`hakoniwa_robot_sync` も同じ方針で、初期実装では poll 前提です。
+`HakoniwaRobotSyncController` は step ごとに `process_recv_events()` を呼び、
+その後に `base_link_pos` / `joint_states` を pull します。
+
+---
+
+## 🤖 Robot Sync
+
+TB3 のような robot model 同期は、現在は `addons/hakoniwa_robot_sync` を使う形に整理されています。
+
+- `hakoniwa-mbody-registry`
+  - `pdu-manifest.yaml`
+  - `godot_sync.yaml`
+  - viewer model JSON
+  から生成物を出す
+- `hakoniwa-godot`
+  - `robot_sync.profile.json`
+  - `endpoint_shm_with_pdu.json`
+  を読む
+- `examples/mujoco`
+  - thin wrapper のみ置く
+
+現在の生成物の主な流れ:
+
+```text
+pdu-manifest.yaml -> pdutypes.json
+pdu-manifest.yaml -> pdu_def.json
+godot_sync.yaml -> endpoint_shm_with_pdu.json
+godot_sync.yaml + viewer model -> robot_sync.profile.json
+```
+
+`examples/mujoco/assets/tb3_reference_sync.gd` は、今は robot 固有ロジック本体ではなく
+`HakoniwaRobotSyncController` を使う薄い wrapper です。
+
+詳細は [docs/robot_sync_design.md](docs/robot_sync_design.md) を参照。
 
 ---
 
