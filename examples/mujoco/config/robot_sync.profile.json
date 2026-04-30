@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "robot_name": "TB3",
+  "base_link_pdu_name": "base_link_pos",
+  "joint_states_pdu_name": "joint_states",
+  "base_node_path": "Visuals/base_link",
+  "coordinate_system": {
+    "position_rule": "hakoniwa_to_godot",
+    "rotation_rule": "hakoniwa_to_godot"
+  },
+  "joint_mappings": [
+    {
+      "joint_name": "wheel_left_joint",
+      "node_path": "Visuals/base_link/wheel_left_link",
+      "axis": "z",
+      "sign": 1.0,
+      "offset_rad": 0.0,
+      "apply_mode": "basis_delta"
+    },
+    {
+      "joint_name": "wheel_right_joint",
+      "node_path": "Visuals/base_link/wheel_right_link",
+      "axis": "z",
+      "sign": 1.0,
+      "offset_rad": 0.0,
+      "apply_mode": "basis_delta"
+    }
+  ]
+}
