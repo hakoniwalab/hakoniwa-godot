@@ -1,13 +1,29 @@
+# Build outputs
 build/
 build-all-codecs/
 build-common-codecs/
 dist/
+
+# OS files
 .DS_Store
-.godot/
+
+# Python
 __pycache__/
+*.pyc
+
+# Godot generated files
+.godot/
+.import/
+export.cfg
+export_presets.cfg
+*.tmp
+*.translation
+
+# Hakoniwa native binaries
 addons/hakoniwa/bin/
 addons/hakoniwa/codecs/*.dylib
 addons/hakoniwa/codecs/*.so
 addons/hakoniwa/codecs/*.dll
-addons/hakoniwa/codecs/*.gdextension
+
+# Generated Hakoniwa message packages
 addons/hakoniwa_msgs/

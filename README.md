@@ -253,6 +253,9 @@ preset オプション:
 cmake --preset default        # hako_msgs のみ
 cmake --preset common-codecs  # common codecs
 cmake --preset all-codecs     # 全 package
+cmake --preset windows-default
+cmake --preset windows-common-codecs
+cmake --preset windows-all-codecs
 ```
 
 package を直接指定する場合:
@@ -269,6 +272,13 @@ cmake -S . -B build -DHAKONIWA_GODOT_CODEC_PACKAGES="all"
 cmake --build build -j4
 ```
 
+Windows ネイティブで build する場合の例:
+
+```powershell
+cmake --preset windows-all-codecs
+cmake --build --preset windows-all-codecs-release
+```
+
 補助ツール:
 
 - `tools/codec_plugin_tool.sh`
@@ -277,6 +287,11 @@ cmake --build build -j4
   - generated GDScript message class を `addons/hakoniwa_msgs` へ同期する
 - `tools/build_all_codecs.sh`
   - 全 codec の configure / build / message addon 同期を一括実行する
+- `tools/build_all_codecs.ps1`
+  - Windows ネイティブ CMake で全 codec build と message addon 同期を行う
+- `tools/build_all_codecs_wsl.sh`
+  - WSL2 の Bash から `powershell.exe` 経由で `tools/build_all_codecs.ps1` を呼ぶ
+  - `--dependency-build minimal|full` で `hakoniwa-core-pro` の依存 build 範囲を切り替える
 - `tools/run_core_pro_conductor.sh`
   - `hakoniwa-core-pro` conductor を単独起動する
 - `tools/run_core_pro_two_asset_controller.sh`
@@ -297,6 +312,27 @@ codec と message addon を一括で生成・配置する場合:
 
 ```bash
 bash tools/build_all_codecs.sh
+```
+
+WSL2 から Windows ネイティブで一括 build する場合:
+
+```bash
+bash tools/build_all_codecs_wsl.sh --config Release
+```
+
+デフォルトの `minimal` は addon 実行に不要な `hakoniwa-core-pro` の command / examples / python bindings を外す。
+依存も含めてフルで回したい場合は `--dependency-build full` を付ける。
+
+`BoostConfig.cmake` が見つからない場合は、Windows 側で `vcpkg` に
+`boost-asio:x64-windows` と `boost-beast:x64-windows` を入れ、
+toolchain を渡して実行する:
+
+```bash
+bash tools/build_all_codecs_wsl.sh \
+  --clean \
+  --config Release \
+  --toolchain-file /mnt/c/project/vcpkg/scripts/buildsystems/vcpkg.cmake \
+  --vcpkg-triplet x64-windows
 ```
 
 このスクリプトは次をまとめて実行する:
@@ -350,6 +386,27 @@ HAKO_ENABLE_PHYSICS_TIME_SYNC=1 HAKO_DEBUG_TIME_SYNC_LOGS=1 <GODOT_BIN> --headle
 
 `tools/run_python_pdu_minimal_controller.sh` は Python 側に `config/endpoint_shm_callback_with_pdu.json` を渡す。`endpoint_shm_with_pdu.json` は Godot endpoint 用設定であり、Python 側には使わない。
 
+Windows で最小確認をする場合は、まず codec smoke、その次に core-pro smoke を回す。
+
+1. codec smoke
+
+```bash
+bash tools/run_codec_smoke_wsl.sh --godot-bin /mnt/c/path/to/Godot.exe --quit
+```
+
+この runner は `tests/smoke/basic_subscriber` 配下へ `addons/` を同期してから起動する。
+成功すると `HAKONIWA_CODEC_SMOKE_OK` が出る。
+
+2. core-pro smoke
+
+```bash
+bash tools/run_core_pro_smoke_wsl.sh \
+  --godot-bin /mnt/c/path/to/Godot_console.exe
+```
+
+この runner は `tests/smoke/core_pro_smoke` 配下へ `addons/` を同期し、Windows 用 conductor runner を背景起動してから Godot を headless 実行する。
+成功すると `HAKO_CORE_SMOKE_OK` が出る。
+
 macOS addon artifact を作る場合:
 
 ```bash
@@ -367,8 +424,24 @@ bash tools/addon_artifact_tool.sh archive --platform linux --arch x86_64 --packa
 Windows artifact の例:
 
 ```powershell
+pwsh -File tools/build_all_codecs.ps1 -Configuration Release -DependencyBuild minimal -Packages all
 pwsh -File tools/addon_artifact_tool.ps1 stage   -Platform windows -Arch x86_64 -Packages all
 pwsh -File tools/addon_artifact_tool.ps1 archive -Platform windows -Arch x86_64 -Packages all
+```
+
+WSL2 から Windows release build と artifact 作成まで行う場合:
+
+```bash
+bash tools/build_all_codecs_wsl.sh \
+  --clean \
+  --config Release \
+  --dependency-build minimal \
+  --toolchain-file /mnt/c/project/vcpkg/scripts/buildsystems/vcpkg.cmake \
+  --vcpkg-triplet x64-windows \
+  --boost-dir /mnt/c/project/vcpkg/installed/x64-windows/share/boost
+
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(wslpath -w tools/addon_artifact_tool.ps1)" stage   -Platform windows -Arch x86_64 -Packages all
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(wslpath -w tools/addon_artifact_tool.ps1)" archive -Platform windows -Arch x86_64 -Packages all
 ```
 
 出力先:

@@ -14,6 +14,7 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "HAKONIWA_GODOT_BUILD_TESTS": "ON",
+        "HAKONIWA_GODOT_MINIMAL_DEP_BUILD": "ON",
         "HAKONIWA_GODOT_CODEC_PACKAGES": "hako_msgs"
       }
     },
@@ -34,6 +35,40 @@
       "cacheVariables": {
         "HAKONIWA_GODOT_CODEC_PACKAGES": "hako_msgs;std_msgs;geometry_msgs;sensor_msgs"
       }
+    },
+    {
+      "name": "windows-default",
+      "displayName": "Windows Default",
+      "generator": "Visual Studio 17 2022",
+      "architecture": {
+        "value": "x64",
+        "strategy": "set"
+      },
+      "binaryDir": "${sourceDir}/build-win-default",
+      "cacheVariables": {
+        "CMAKE_CONFIGURATION_TYPES": "Debug;Release",
+        "HAKONIWA_GODOT_BUILD_TESTS": "ON",
+        "HAKONIWA_GODOT_MINIMAL_DEP_BUILD": "ON",
+        "HAKONIWA_GODOT_CODEC_PACKAGES": "hako_msgs"
+      }
+    },
+    {
+      "name": "windows-all-codecs",
+      "displayName": "Windows All Codecs",
+      "inherits": "windows-default",
+      "binaryDir": "${sourceDir}/build-win-all-codecs",
+      "cacheVariables": {
+        "HAKONIWA_GODOT_CODEC_PACKAGES": "all"
+      }
+    },
+    {
+      "name": "windows-common-codecs",
+      "displayName": "Windows Common Codecs",
+      "inherits": "windows-default",
+      "binaryDir": "${sourceDir}/build-win-common-codecs",
+      "cacheVariables": {
+        "HAKONIWA_GODOT_CODEC_PACKAGES": "hako_msgs;std_msgs;geometry_msgs;sensor_msgs"
+      }
     }
   ],
   "buildPresets": [
@@ -50,6 +85,42 @@
     {
       "name": "common-codecs",
       "configurePreset": "common-codecs",
+      "jobs": 4
+    },
+    {
+      "name": "windows-default-debug",
+      "configurePreset": "windows-default",
+      "configuration": "Debug",
+      "jobs": 4
+    },
+    {
+      "name": "windows-default-release",
+      "configurePreset": "windows-default",
+      "configuration": "Release",
+      "jobs": 4
+    },
+    {
+      "name": "windows-all-codecs-debug",
+      "configurePreset": "windows-all-codecs",
+      "configuration": "Debug",
+      "jobs": 4
+    },
+    {
+      "name": "windows-all-codecs-release",
+      "configurePreset": "windows-all-codecs",
+      "configuration": "Release",
+      "jobs": 4
+    },
+    {
+      "name": "windows-common-codecs-debug",
+      "configurePreset": "windows-common-codecs",
+      "configuration": "Debug",
+      "jobs": 4
+    },
+    {
+      "name": "windows-common-codecs-release",
+      "configurePreset": "windows-common-codecs",
+      "configuration": "Release",
       "jobs": 4
     }
   ],

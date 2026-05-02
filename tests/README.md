@@ -35,6 +35,14 @@
 <GODOT_BIN> --headless --path tests/smoke/basic_subscriber --quit
 ```
 
+Windows / WSL2 から実行する場合:
+
+```bash
+bash tools/run_codec_smoke_wsl.sh --godot-bin /mnt/c/path/to/Godot.exe --quit
+```
+
+この runner は test project 配下へ `addons/` を同期してから起動する。
+
 成功条件:
 
 - `HAKONIWA_CODEC_SMOKE_OK`
@@ -62,6 +70,13 @@ ctest --test-dir build --output-on-failure
 
 ```bash
 bash tools/run_core_pro_smoke.sh
+```
+
+Windows / WSL2:
+
+```bash
+bash tools/run_core_pro_smoke_wsl.sh \
+  --godot-bin /mnt/c/path/to/Godot_console.exe
 ```
 
 成功条件:

@@ -26,6 +26,9 @@ preset:
 cmake --preset default        # hako_msgs のみ
 cmake --preset common-codecs  # common codecs
 cmake --preset all-codecs     # 全 package
+cmake --preset windows-default
+cmake --preset windows-common-codecs
+cmake --preset windows-all-codecs
 ```
 
 package を直接指定する場合:
@@ -42,6 +45,13 @@ cmake -S . -B build -DHAKONIWA_GODOT_CODEC_PACKAGES="all"
 cmake --build build -j4
 ```
 
+Windows ネイティブで build する場合:
+
+```powershell
+cmake --preset windows-all-codecs
+cmake --build --preset windows-all-codecs-release
+```
+
 ## codec / message addon
 
 補助ツール:
@@ -52,6 +62,11 @@ cmake --build build -j4
   - generated GDScript message class を `addons/hakoniwa_msgs` へ同期
 - `tools/build_all_codecs.sh`
   - 全 codec の configure / build / message addon 同期を一括実行
+- `tools/build_all_codecs.ps1`
+  - Windows ネイティブ CMake で全 codec build と message addon 同期を一括実行
+- `tools/build_all_codecs_wsl.sh`
+  - WSL2 の Bash から `powershell.exe` 経由で `tools/build_all_codecs.ps1` を起動
+  - `--dependency-build minimal|full` で `hakoniwa-core-pro` の build 範囲を切り替え
 
 例:
 
@@ -68,7 +83,46 @@ bash tools/message_addon_tool.sh sync --packages all
 bash tools/build_all_codecs.sh
 ```
 
+WSL2 から Windows ネイティブで一括 build する場合:
+
+```bash
+bash tools/build_all_codecs_wsl.sh --config Release
+```
+
+`minimal` は addon/runtime に不要な `hakoniwa-core-pro` の command / examples / python bindings を無効化する。
+依存込みでフル確認したい場合だけ `--dependency-build full` を使う。
+
+`BoostConfig.cmake` が見つからない場合は、Windows 側で `vcpkg` に
+`boost-asio:x64-windows` と `boost-beast:x64-windows` を入れ、toolchain を渡す:
+
+```bash
+bash tools/build_all_codecs_wsl.sh \
+  --clean \
+  --config Release \
+  --toolchain-file /mnt/c/project/vcpkg/scripts/buildsystems/vcpkg.cmake \
+  --vcpkg-triplet x64-windows
+```
+
 `tests/integration/core_pro_two_asset` のように複数 codec を使う integration test の前には、`all` で揃えるのが一番確実です。
+
+Windows で最小確認を回す場合は、まず codec smoke、その次に core-pro smoke を使う。
+
+codec smoke:
+
+```bash
+bash tools/run_codec_smoke_wsl.sh --godot-bin /mnt/c/path/to/Godot.exe --quit
+```
+
+成功条件は `HAKONIWA_CODEC_SMOKE_OK` です。
+
+core-pro smoke:
+
+```bash
+bash tools/run_core_pro_smoke_wsl.sh \
+  --godot-bin /mnt/c/path/to/Godot_console.exe
+```
+
+成功条件は `HAKO_CORE_SMOKE_OK` です。
 
 ## 既知の単独起動補助
 
@@ -96,8 +150,24 @@ bash tools/addon_artifact_tool.sh archive --platform linux --arch x86_64 --packa
 ### Windows x86_64
 
 ```powershell
+pwsh -File tools/build_all_codecs.ps1 -Configuration Release -DependencyBuild minimal -Packages all
 pwsh -File tools/addon_artifact_tool.ps1 stage   -Platform windows -Arch x86_64 -Packages all
 pwsh -File tools/addon_artifact_tool.ps1 archive -Platform windows -Arch x86_64 -Packages all
+```
+
+WSL2 から Windows release build と artifact 作成まで行う場合:
+
+```bash
+bash tools/build_all_codecs_wsl.sh \
+  --clean \
+  --config Release \
+  --dependency-build minimal \
+  --toolchain-file /mnt/c/project/vcpkg/scripts/buildsystems/vcpkg.cmake \
+  --vcpkg-triplet x64-windows \
+  --boost-dir /mnt/c/project/vcpkg/installed/x64-windows/share/boost
+
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(wslpath -w tools/addon_artifact_tool.ps1)" stage   -Platform windows -Arch x86_64 -Packages all
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(wslpath -w tools/addon_artifact_tool.ps1)" archive -Platform windows -Arch x86_64 -Packages all
 ```
 
 ## release 時の確認

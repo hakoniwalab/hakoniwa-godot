@@ -1,7 +1,10 @@
 extends Node
 
+const HakoniwaCodecNode = preload("res://addons/hakoniwa/scripts/hakoniwa_codec_node.gd")
 const HakoniwaEndpointNode = preload("res://addons/hakoniwa/scripts/hakoniwa_pdu_endpoint.gd")
 const HakoPduStdMsgsUInt64 = preload("res://addons/hakoniwa_msgs/std_msgs/UInt64.gd")
+
+var _codec_node: Node = null
 
 func fail(message: String) -> void:
 	push_error(message)
@@ -33,6 +36,9 @@ func _ready() -> void:
 		fail("HakoniwaCodecRegistry is not registered")
 		return
 
+	if not _ensure_codec_node():
+		return
+
 	_run_codec_demo()
 	_run_latest_demo()
 	_run_queue_demo()
@@ -43,20 +49,22 @@ func _ready() -> void:
 
 	print("HAKONIWA_CODEC_SMOKE_OK")
 
+func _ensure_codec_node() -> bool:
+	if _codec_node != null:
+		return true
+	_codec_node = instantiate_node(HakoniwaCodecNode, "HakoniwaCodecNode")
+	if _codec_node == null:
+		return false
+	_codec_node.codec_manifest_path = "res://addons/hakoniwa/codec_manifest.json"
+	_codec_node.load_on_ready = false
+	_codec_node.fail_fast = true
+	if not _codec_node.initialize():
+		fail("HakoniwaCodecNode initialize failed: %s" % str(_codec_node.last_error))
+		return false
+	return true
+
 func _create_endpoint_node(config: String) -> Node:
-	var hako_codec_extension: Resource = load("res://addons/hakoniwa/codecs/hako_msgs_codec.gdextension")
-	if hako_codec_extension == null:
-		fail("hako_msgs_codec.gdextension could not be loaded")
-		return
-
-	var std_codec_extension: Resource = load("res://addons/hakoniwa/codecs/std_msgs_codec.gdextension")
-	if std_codec_extension == null:
-		fail("std_msgs_codec.gdextension could not be loaded")
-		return
-
-	var geometry_codec_extension: Resource = load("res://addons/hakoniwa/codecs/geometry_msgs_codec.gdextension")
-	if geometry_codec_extension == null:
-		fail("geometry_msgs_codec.gdextension could not be loaded")
+	if not _ensure_codec_node():
 		return
 
 	var endpoint := instantiate_node(HakoniwaEndpointNode, "HakoniwaEndpointNode")
@@ -64,12 +72,8 @@ func _create_endpoint_node(config: String) -> Node:
 		return null
 
 	endpoint.config_path = config
-	endpoint.codec_plugins = PackedStringArray([
-		"res://addons/hakoniwa/codecs/hako_msgs_codec",
-		"res://addons/hakoniwa/codecs/std_msgs_codec",
-		"res://addons/hakoniwa/codecs/geometry_msgs_codec"
-	])
-	expect_equal(endpoint.load_configured_codecs(), 3, "codec.load_configured")
+	endpoint.codec_node_path = endpoint.get_path_to(_codec_node)
+	expect_equal(endpoint.prepare(), true, "endpoint.prepare")
 	expect_equal(endpoint.has_codec("hako_msgs", "GameControllerOperation"), true, "codec.has_codec.hako_msgs")
 	expect_equal(endpoint.has_codec("std_msgs", "UInt64"), true, "codec.has_codec.std_msgs")
 	expect_equal(endpoint.has_codec("geometry_msgs", "Pose"), true, "codec.has_codec.geometry_msgs")

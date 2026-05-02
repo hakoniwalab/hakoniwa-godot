@@ -5,6 +5,29 @@ set(HAKONIWA_GODOT_CODEC_DIR "${HAKONIWA_GODOT_ADDON_DIR}/codecs")
 set(HAKONIWA_PDU_REGISTRY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/hakoniwa-core-pro/hakoniwa-pdu-registry")
 set(HAKONIWA_GODOT_TEMPLATE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/templates")
 
+function(hakoniwa_set_flat_output_dirs target_name output_dir)
+  set_target_properties(
+    ${target_name}
+    PROPERTIES
+      LIBRARY_OUTPUT_DIRECTORY "${output_dir}"
+      RUNTIME_OUTPUT_DIRECTORY "${output_dir}"
+      PDB_OUTPUT_DIRECTORY "${output_dir}"
+  )
+
+  if(CMAKE_CONFIGURATION_TYPES)
+    foreach(config Debug Release RelWithDebInfo MinSizeRel)
+      string(TOUPPER "${config}" config_upper)
+      set_target_properties(
+        ${target_name}
+        PROPERTIES
+          "LIBRARY_OUTPUT_DIRECTORY_${config_upper}" "${output_dir}"
+          "RUNTIME_OUTPUT_DIRECTORY_${config_upper}" "${output_dir}"
+          "PDB_OUTPUT_DIRECTORY_${config_upper}" "${output_dir}"
+      )
+    endforeach()
+  endif()
+endfunction()
+
 add_library(${HAKONIWA_GODOT_NATIVE_TARGET} SHARED)
 
 add_library(hakoniwa_godot_codec_runtime STATIC)
@@ -68,11 +91,9 @@ set_target_properties(
     CXX_EXTENSIONS OFF
     POSITION_INDEPENDENT_CODE ON
     BUILD_RPATH_USE_ORIGIN ON
-    LIBRARY_OUTPUT_DIRECTORY "${HAKONIWA_GODOT_BIN_DIR}"
-    RUNTIME_OUTPUT_DIRECTORY "${HAKONIWA_GODOT_BIN_DIR}"
-    PDB_OUTPUT_DIRECTORY "${HAKONIWA_GODOT_BIN_DIR}"
     OUTPUT_NAME "hakoniwa_godot_native"
 )
+hakoniwa_set_flat_output_dirs(${HAKONIWA_GODOT_NATIVE_TARGET} "${HAKONIWA_GODOT_BIN_DIR}")
 
 if(APPLE)
   set_target_properties(
@@ -156,12 +177,18 @@ function(hakoniwa_add_codec_plugin package_name)
       CXX_EXTENSIONS OFF
       POSITION_INDEPENDENT_CODE ON
       BUILD_RPATH_USE_ORIGIN ON
-      LIBRARY_OUTPUT_DIRECTORY "${HAKONIWA_GODOT_CODEC_DIR}"
-      RUNTIME_OUTPUT_DIRECTORY "${HAKONIWA_GODOT_CODEC_DIR}"
-      PDB_OUTPUT_DIRECTORY "${HAKONIWA_GODOT_CODEC_DIR}"
       OUTPUT_NAME "${package_name}_codec"
       PREFIX ""
   )
+  hakoniwa_set_flat_output_dirs(${package_name}_codec "${HAKONIWA_GODOT_CODEC_DIR}")
+
+  if(WIN32)
+    set_target_properties(
+      ${package_name}_codec
+      PROPERTIES
+        WINDOWS_EXPORT_ALL_SYMBOLS ON
+    )
+  endif()
 
   if(APPLE)
     set_target_properties(
