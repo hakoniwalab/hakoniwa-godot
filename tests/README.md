@@ -72,12 +72,27 @@ ctest --test-dir build --output-on-failure
 bash tools/run_core_pro_smoke.sh
 ```
 
+Windows ネイティブでは、使用する Hakoniwa Core 設定を明示することを推奨します。
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/run_core_pro_smoke.ps1 `
+  -GodotBin C:\path\to\Godot_console.exe `
+  -HakoConfigPath C:\path\to\cpp_core_config.json
+```
+
 Windows / WSL2:
 
 ```bash
 bash tools/run_core_pro_smoke_wsl.sh \
-  --godot-bin /mnt/c/path/to/Godot_console.exe
+  --godot-bin /mnt/c/path/to/Godot_console.exe \
+  --hako-config-path /mnt/c/path/to/cpp_core_config.json
 ```
+
+`-HakoConfigPath` / `--hako-config-path` は後方互換のため必須にはしていません。未指定の場合、runner は現在の `HAKO_CONFIG_PATH` を継承するか、環境変数がなければ Hakoniwa Core のデフォルト設定を使い、その選択を WARNING で表示します。smoke test がどの core 設定を参照しているかを明示的に確認してください。
+
+Windows runner は test project の `addons` も起動前に確認します。Git for Windows で POSIX symlink が通常ファイルとして checkout されていた場合や `addons` が存在しない場合は、repo root の `addons/` を実ディレクトリとしてコピーして正規化します。正常な symbolic link はそのまま使用します。
+
+`core_pro_smoke` では Godot の `--quit` を付けません。このテストは conductor と start / stop / reset / restart / step を複数 frame にわたって実行し、正常完了時に GDScript 自身が `HAKO_CORE_SMOKE_OK` を出力して `get_tree().quit(0)` します。
 
 成功条件:
 

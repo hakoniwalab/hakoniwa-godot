@@ -7,12 +7,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 godot_bin=""
 project_dir=""
 build_dir=""
+hako_config_path=""
 config="Release"
 wait_sec="1"
 delta_usec="10000"
 max_delay_usec="20000"
-quit_after_run="false"
-sync_addons="true"
 keep_conductor="false"
 
 usage() {
@@ -24,12 +23,11 @@ Options:
   --godot-bin PATH
   --project-dir PATH
   --build-dir PATH
+  --hako-config-path PATH
   --config Debug|Release
   --wait-sec N
   --conductor-delta-usec N
   --conductor-max-delay-usec N
-  --quit
-  --no-sync-addons
   --keep-conductor
 EOF
 }
@@ -63,6 +61,10 @@ while [[ $# -gt 0 ]]; do
       build_dir="$(to_windows_path "$2")"
       shift 2
       ;;
+    --hako-config-path)
+      hako_config_path="$(to_windows_path "$2")"
+      shift 2
+      ;;
     --config)
       config="$2"
       shift 2
@@ -80,12 +82,12 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --quit)
-      quit_after_run="true"
-      shift
+      echo "--quit is not supported for core_pro_smoke. The Godot test runs a multi-frame lifecycle and quits itself after HAKO_CORE_SMOKE_OK." >&2
+      exit 2
       ;;
     --no-sync-addons)
-      sync_addons="false"
-      shift
+      echo "--no-sync-addons is no longer supported. The Windows runner validates and normalizes the project addons path automatically." >&2
+      exit 2
       ;;
     --keep-conductor)
       keep_conductor="true"
@@ -129,12 +131,8 @@ if [[ -n "${build_dir}" ]]; then
   cmd+=(-BuildDir "${build_dir}")
 fi
 
-if [[ "${quit_after_run}" == "true" ]]; then
-  cmd+=(-QuitAfterRun)
-fi
-
-if [[ "${sync_addons}" == "true" ]]; then
-  cmd+=(-SyncAddons)
+if [[ -n "${hako_config_path}" ]]; then
+  cmd+=(-HakoConfigPath "${hako_config_path}")
 fi
 
 if [[ "${keep_conductor}" == "true" ]]; then
