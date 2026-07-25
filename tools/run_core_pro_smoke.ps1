@@ -4,11 +4,11 @@ param(
     [string]$ProjectDir = "",
     [string]$BuildDir = "",
     [string]$Configuration = "Release",
+    [string]$HakoConfigPath = "",
     [int]$WaitSec = 1,
     [int]$ConductorDeltaUsec = 10000,
     [int]$ConductorMaxDelayUsec = 20000,
     [switch]$SyncAddons,
-    [switch]$QuitAfterRun,
     [switch]$KeepConductor
 )
 
@@ -41,24 +41,55 @@ if (-not (Test-Path -LiteralPath $ConductorExe -PathType Leaf)) {
     throw "Windows conductor runner not found: $ConductorExe"
 }
 
-if ($SyncAddons) {
+function Ensure-ProjectAddons {
     if (-not (Test-Path -LiteralPath $RepoAddonsDir -PathType Container)) {
         throw "Repository addons directory not found: $RepoAddonsDir"
     }
-    $SkipSyncBecauseSymlink = $false
+
     if (Test-Path -LiteralPath $ProjectAddonsDir) {
         $ProjectAddonsItem = Get-Item -LiteralPath $ProjectAddonsDir -Force
         if ($ProjectAddonsItem.LinkType -eq "SymbolicLink") {
-            $SkipSyncBecauseSymlink = $true
+            Write-Host "[run-core-pro-smoke.ps1] addons uses repository symlink: $ProjectAddonsDir"
+            return
         }
-        else {
-            Remove-Item -LiteralPath $ProjectAddonsDir -Recurse -Force
-        }
+
+        Write-Warning "Project addons path is not a symbolic link. Replacing it with a copy of the repository addons directory: $ProjectAddonsDir"
+        Remove-Item -LiteralPath $ProjectAddonsDir -Recurse -Force
     }
-    if (-not $SkipSyncBecauseSymlink) {
-        New-Item -ItemType Directory -Force -Path $ProjectAddonsDir | Out-Null
-        Copy-Item -Path (Join-Path $RepoAddonsDir "*") -Destination $ProjectAddonsDir -Recurse -Force
+    else {
+        Write-Warning "Project addons path is missing. Creating a copy of the repository addons directory: $ProjectAddonsDir"
     }
+
+    New-Item -ItemType Directory -Force -Path $ProjectAddonsDir | Out-Null
+    Copy-Item -Path (Join-Path $RepoAddonsDir "*") -Destination $ProjectAddonsDir -Recurse -Force
+}
+
+if ($SyncAddons) {
+    Write-Warning "-SyncAddons is no longer required; addons are validated and normalized automatically on Windows."
+}
+Ensure-ProjectAddons
+
+$HadOriginalHakoConfigPath = Test-Path Env:HAKO_CONFIG_PATH
+$OriginalHakoConfigPath = $env:HAKO_CONFIG_PATH
+$OverrideHakoConfigPath = $false
+
+if (-not [string]::IsNullOrWhiteSpace($HakoConfigPath)) {
+    if (-not (Test-Path -LiteralPath $HakoConfigPath -PathType Leaf)) {
+        throw "Hakoniwa Core config not found: $HakoConfigPath"
+    }
+    $ResolvedHakoConfigPath = (Resolve-Path -LiteralPath $HakoConfigPath).Path
+    $env:HAKO_CONFIG_PATH = $ResolvedHakoConfigPath
+    $OverrideHakoConfigPath = $true
+    Write-Host "[run-core-pro-smoke.ps1] using explicit HAKO_CONFIG_PATH=$ResolvedHakoConfigPath"
+}
+elseif (-not [string]::IsNullOrWhiteSpace($env:HAKO_CONFIG_PATH)) {
+    Write-Warning "-HakoConfigPath was not specified. Inheriting HAKO_CONFIG_PATH=$($env:HAKO_CONFIG_PATH). Confirm that this config belongs to the Hakoniwa runtime used by this smoke test."
+    if (-not (Test-Path -LiteralPath $env:HAKO_CONFIG_PATH -PathType Leaf)) {
+        Write-Warning "The inherited HAKO_CONFIG_PATH does not point to an existing file: $($env:HAKO_CONFIG_PATH)"
+    }
+}
+else {
+    Write-Warning "-HakoConfigPath was not specified and HAKO_CONFIG_PATH is unset. Hakoniwa Core will use its default configuration path."
 }
 
 $ConductorArguments = @(
@@ -66,20 +97,20 @@ $ConductorArguments = @(
     "--max-delay-usec", $ConductorMaxDelayUsec
 )
 
-Write-Host "[run-core-pro-smoke.ps1] starting conductor"
-$ConductorProcess = Start-Process `
-    -FilePath $ConductorExe `
-    -ArgumentList $ConductorArguments `
-    -PassThru `
-    -WindowStyle Hidden
-
+$ConductorProcess = $null
 try {
+    Write-Host "[run-core-pro-smoke.ps1] starting conductor"
+    $ConductorProcess = Start-Process `
+        -FilePath $ConductorExe `
+        -ArgumentList $ConductorArguments `
+        -PassThru `
+        -WindowStyle Hidden
+
     Start-Sleep -Seconds $WaitSec
 
+    # core_pro_smoke drives an asynchronous multi-frame lifecycle and quits itself
+    # after emitting HAKO_CORE_SMOKE_OK. Do not pass Godot's --quit flag here.
     $GodotArguments = @("--headless", "--path", $ProjectDir)
-    if ($QuitAfterRun) {
-        $GodotArguments += "--quit"
-    }
 
     Write-Host "[run-core-pro-smoke.ps1] launching Godot"
     $StdoutPath = [System.IO.Path]::GetTempFileName()
@@ -130,5 +161,14 @@ try {
 finally {
     if (-not $KeepConductor -and $ConductorProcess -and -not $ConductorProcess.HasExited) {
         Stop-Process -Id $ConductorProcess.Id -Force -ErrorAction SilentlyContinue
+    }
+
+    if ($OverrideHakoConfigPath) {
+        if ($HadOriginalHakoConfigPath) {
+            $env:HAKO_CONFIG_PATH = $OriginalHakoConfigPath
+        }
+        else {
+            Remove-Item Env:HAKO_CONFIG_PATH -ErrorAction SilentlyContinue
+        }
     }
 }
