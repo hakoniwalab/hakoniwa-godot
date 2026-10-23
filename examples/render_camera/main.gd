@@ -11,6 +11,8 @@ extends Node
 # overwritten with the request number (sim_time_usec & 0xff) so the benchmark client
 # can match the response to its request.
 # Options (after --):
+#   --service=frame            serve HakoCamera/RenderCameraFrame (legacy service otherwise)
+#   --profiles=<dir>           camera profile JSON directory (required for frame service)
 #   --world-glb=<path>          draw this glTF world (loaded at run time) instead of the boxes
 #   --camera-pose=x,y,z,yaw_deg use this camera pose (ROS world frame, m and deg) instead of the request's
 #   --save-frame-dir=<dir>      save the 10th rendered frame of each size as PNG
@@ -18,8 +20,9 @@ extends Node
 const SimNodeScript = preload("res://addons/hakoniwa/scripts/hakoniwa_simulation_node.gd")
 const CodecNodeScript = preload("res://addons/hakoniwa/scripts/hakoniwa_codec_node.gd")
 const ASSET_NAME := "GodotRenderCamera"
-const SERVICE_NAME := "HakoCamera/RenderCamera"
 const PACKAGE := "hako_srv_msgs"
+const LEGACY_SERVICE_NAME := "HakoCamera/RenderCamera"
+const FRAME_SERVICE_NAME := "HakoCamera/RenderCameraFrame"
 
 var _sim = null
 var _codec = null
@@ -31,6 +34,11 @@ var _rotor: MeshInstance3D
 var _world_glb := ""
 var _camera_pose_override := {}
 var _save_frame_dir := ""
+var _service_name := LEGACY_SERVICE_NAME
+var _request_packet := "RenderCameraRequestPacket"
+var _response_packet := "RenderCameraResponsePacket"
+var _frame_service := false
+var _profiles := {}
 
 func _ready() -> void:
 	# --headless uses the dummy renderer: nothing is drawn and get_image() returns null.
@@ -39,6 +47,7 @@ func _ready() -> void:
 		return
 	RenderingServer.render_loop_enabled = false
 	var service_json := ""
+	var profiles_dir := ""
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--service-json="):
 			service_json = arg.trim_prefix("--service-json=")
@@ -53,9 +62,24 @@ func _ready() -> void:
 					"orientation": {"x": 0.0, "y": 0.0, "z": sin(yaw * 0.5), "w": cos(yaw * 0.5)}}
 		elif arg.begins_with("--save-frame-dir="):
 			_save_frame_dir = arg.trim_prefix("--save-frame-dir=")
+		elif arg == "--service=frame":
+			_frame_service = true
+			_service_name = FRAME_SERVICE_NAME
+			_request_packet = "RenderCameraFrameRequestPacket"
+			_response_packet = "RenderCameraFrameResponsePacket"
+		elif arg.begins_with("--profiles="):
+			profiles_dir = arg.trim_prefix("--profiles=")
 	if service_json.is_empty():
 		_quit("--service-json=<path> is required")
 		return
+	if _frame_service:
+		if profiles_dir.is_empty():
+			_quit("--profiles=<dir> is required with --service=frame")
+			return
+		_load_profiles(profiles_dir)
+		if _profiles.is_empty():
+			_quit("no valid camera profiles found in: %s" % profiles_dir)
+			return
 	if load("res://addons/hakoniwa/hakoniwa.gdextension") == null:
 		_quit("hakoniwa extension could not be loaded")
 		return
@@ -91,7 +115,7 @@ func _ready() -> void:
 		_sim.get_configured_delta_time_usec(), RenderingServer.get_current_rendering_method()])
 
 func on_simulation_start() -> void:
-	if _server.create(ASSET_NAME, SERVICE_NAME) < 0:
+	if _server.create(ASSET_NAME, _service_name) < 0:
 		push_error(_server.get_last_error_text())
 		return
 	print("SERVER event Start")
@@ -113,8 +137,11 @@ func _on_simulation_step(simtime_usec: int, _world_time_usec: int) -> void:
 		return
 	var t0 := Time.get_ticks_usec()
 	var registry: Node = _codec.get_registry()
-	var request: Dictionary = registry.decode(PACKAGE, "RenderCameraRequestPacket", _server.get_request())
+	var request: Dictionary = registry.decode(PACKAGE, _request_packet, _server.get_request())
 	var body: Dictionary = request["body"]
+	if _frame_service:
+		_handle_frame_request(registry, body)
+		return
 	var size := _parse_size(String(body["camera_name"]))
 	var seq := int(body["sim_time_usec"])
 
@@ -122,8 +149,7 @@ func _on_simulation_step(simtime_usec: int, _world_time_usec: int) -> void:
 	var pixels := PackedByteArray()
 	var image: Image = null
 	if size.x > 0 and size.y > 0:
-		if _viewport.size != size:
-			_viewport.size = size
+		_resize_viewport(size)
 		_rotor.rotation.y = fmod(float(simtime_usec) * 0.000001, TAU)
 		_apply_ros_enu_pose(_camera_pose_override if not _camera_pose_override.is_empty() else body["camera_pose"])
 		_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
@@ -136,7 +162,7 @@ func _on_simulation_step(simtime_usec: int, _world_time_usec: int) -> void:
 		pixels[0] = seq & 0xff
 	var t3 := Time.get_ticks_usec()
 
-	var response: Dictionary = registry.decode(PACKAGE, "RenderCameraResponsePacket", _server.get_response_template())
+	var response: Dictionary = registry.decode(PACKAGE, _response_packet, _server.get_response_template())
 	response["body"]["result_code"] = 0
 	response["body"]["sim_time_usec"] = seq
 	var image_msg: Dictionary = response["body"]["image"]
@@ -146,7 +172,7 @@ func _on_simulation_step(simtime_usec: int, _world_time_usec: int) -> void:
 	image_msg["is_bigendian"] = 0
 	image_msg["step"] = size.x * 3
 	image_msg["data"] = pixels
-	var packet: PackedByteArray = registry.encode(PACKAGE, "RenderCameraResponsePacket", response)
+	var packet: PackedByteArray = registry.encode(PACKAGE, _response_packet, response)
 	var t4 := Time.get_ticks_usec()
 	_put_response(packet)
 	var t5 := Time.get_ticks_usec()
@@ -154,6 +180,129 @@ func _on_simulation_step(simtime_usec: int, _world_time_usec: int) -> void:
 		seq, size.x, size.y, t1 - t0, t2 - t1, t3 - t2, t4 - t3, t5 - t4])
 	if seq == 10 and image != null and not _save_frame_dir.is_empty():
 		image.save_png(_save_frame_dir.path_join("frame_%dx%d.png" % [size.x, size.y]))
+
+func _handle_frame_request(registry: Node, body: Dictionary) -> void:
+	var camera_name := String(body["camera_name"])
+	var sim_time_usec := int(body["sim_time_usec"])
+	var outputs := int(body["outputs"])
+	var response: Dictionary = registry.decode(PACKAGE, _response_packet, _server.get_response_template())
+	response["body"]["sim_time_usec"] = sim_time_usec
+	var profile: Dictionary = _profiles.get(camera_name, {})
+	if profile.is_empty():
+		response["body"]["result_code"] = 1
+		var missing_packet: PackedByteArray = registry.encode(PACKAGE, _response_packet, response)
+		_put_response(missing_packet)
+		print("TIMING sim_time_usec=%d camera=%s draw_ms=0.000 readback_ms=0.000 convert_ms=0.000 encode_ms=0.000 put_response_ms=0.000 result_code=1" % [sim_time_usec, camera_name])
+		return
+
+	response["body"]["result_code"] = 0
+	var draw_start := Time.get_ticks_usec()
+	var image: Image = null
+	if outputs & 1:
+		var size := Vector2i(profile["width"], profile["height"])
+		_resize_viewport(size)
+		_camera.keep_aspect = Camera3D.KEEP_WIDTH
+		_camera.fov = rad_to_deg(profile["horizontal_fov"])
+		_camera.near = profile["near"]
+		_camera.far = profile["far"]
+		_apply_ros_enu_pose(body["camera_pose"])
+		_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+		RenderingServer.force_draw(false)
+	var readback_start := Time.get_ticks_usec()
+	if outputs & 1:
+		image = _viewport.get_texture().get_image()
+	var convert_start := Time.get_ticks_usec()
+	if image != null:
+		image.convert(Image.FORMAT_RGB8)
+		var rgb: Dictionary = response["body"]["rgb"]
+		_set_image_header(rgb, sim_time_usec, camera_name)
+		rgb["height"] = profile["height"]
+		rgb["width"] = profile["width"]
+		rgb["encoding"] = "rgb8"
+		rgb["is_bigendian"] = 0
+		rgb["step"] = int(profile["width"]) * 3
+		rgb["data"] = image.get_data()
+	var encode_start := Time.get_ticks_usec()
+	var packet: PackedByteArray = registry.encode(PACKAGE, _response_packet, response)
+	var put_start := Time.get_ticks_usec()
+	_put_response(packet)
+	var done := Time.get_ticks_usec()
+	print("TIMING sim_time_usec=%d camera=%s draw_ms=%.3f readback_ms=%.3f convert_ms=%.3f encode_ms=%.3f put_response_ms=%.3f result_code=0" % [
+		sim_time_usec, camera_name, (readback_start - draw_start) / 1000.0,
+		(convert_start - readback_start) / 1000.0, (encode_start - convert_start) / 1000.0,
+		(put_start - encode_start) / 1000.0, (done - put_start) / 1000.0])
+
+func _set_image_header(image_msg: Dictionary, sim_time_usec: int, frame_id: String) -> void:
+	image_msg["header"]["stamp"]["sec"] = int(sim_time_usec / 1000000)
+	image_msg["header"]["stamp"]["nanosec"] = (sim_time_usec % 1000000) * 1000
+	image_msg["header"]["frame_id"] = frame_id
+
+func _load_profiles(directory: String) -> void:
+	var dir := DirAccess.open(directory)
+	if dir == null:
+		_quit("could not open profiles directory: %s" % directory)
+		return
+	dir.list_dir_begin()
+	var name := dir.get_next()
+	while not name.is_empty():
+		if not dir.current_is_dir() and name.get_extension() == "json":
+			_load_profile(directory.path_join(name))
+		name = dir.get_next()
+	dir.list_dir_end()
+	print("PROFILES loaded=%d directory=%s" % [_profiles.size(), directory])
+
+func _load_profile(path: String) -> void:
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		_profile_error(path, "/", "cannot open file")
+		return
+	var json := JSON.new()
+	var error := json.parse(file.get_as_text())
+	if error != OK:
+		_profile_error(path, "/", "invalid JSON at line %d: %s" % [json.get_error_line(), json.get_error_message()])
+		return
+	var root = json.data
+	if typeof(root) != TYPE_DICTIONARY:
+		_profile_error(path, "/", "must be an object")
+		return
+	var fields := [
+		["/spec/frame_id", TYPE_STRING], ["/spec/image/width", TYPE_INT],
+		["/spec/image/height", TYPE_INT], ["/spec/image/format", TYPE_STRING],
+		["/spec/horizontal_fov", TYPE_FLOAT], ["/spec/clip/near", TYPE_FLOAT],
+		["/spec/clip/far", TYPE_FLOAT]]
+	var values := []
+	for field in fields:
+		var result := _profile_value(root, field[0])
+		if not result[0]:
+			_profile_error(path, field[0], "is required")
+			return
+		var value = result[1]
+		var actual := typeof(value)
+		var numeric: bool = field[1] == TYPE_FLOAT and (actual == TYPE_FLOAT or actual == TYPE_INT)
+		# Godot's JSON parser returns every number as a float: 1280 comes back as 1280.0.
+		if field[1] == TYPE_INT and actual == TYPE_FLOAT and value == floor(value):
+			value = int(value)
+			actual = TYPE_INT
+		if actual != field[1] and not numeric:
+			_profile_error(path, field[0], "has wrong type")
+			return
+		values.append(value)
+	if values[0].is_empty() or values[1] <= 0 or values[2] <= 0 or values[4] <= 0.0 or values[5] <= 0.0 or values[6] <= values[5]:
+		_profile_error(path, "/spec", "contains an invalid value")
+		return
+	_profiles[values[0]] = {"width": values[1], "height": values[2], "format": values[3],
+		"horizontal_fov": float(values[4]), "near": float(values[5]), "far": float(values[6])}
+
+func _profile_value(root: Dictionary, pointer: String) -> Array:
+	var value = root
+	for part in pointer.trim_prefix("/").split("/"):
+		if typeof(value) != TYPE_DICTIONARY or not value.has(part):
+			return [false, null]
+		value = value[part]
+	return [true, value]
+
+func _profile_error(path: String, field: String, message: String) -> void:
+	push_warning("PROFILE file=%s field=%s ignored: %s" % [path, field, message])
 
 func _put_response(packet: PackedByteArray) -> void:
 	var rc := _server.put_response(packet)
@@ -242,6 +391,10 @@ func _load_world_glb(world: Node3D) -> bool:
 # ROS ENU is right-handed (x forward, y left, z up); Godot is y up and the camera
 # looks down its local -z. Position (x, y, z) maps to Godot (-y, z, -x); the
 # orientation is applied in ROS space and converted with the same basis change.
+func _resize_viewport(size: Vector2i) -> void:
+	if _viewport.size != size:
+		_viewport.size = size
+
 func _apply_ros_enu_pose(pose: Dictionary) -> void:
 	var p: Dictionary = pose.get("position", {})
 	var q: Dictionary = pose.get("orientation", {})
@@ -251,6 +404,9 @@ func _apply_ros_enu_pose(pose: Dictionary) -> void:
 	_camera.transform = Transform3D(
 		conversion * Basis(ros_rotation) * conversion.inverse(),
 		Vector3(-float(p.get("y", 0.0)), float(p.get("z", 0.0)), -float(p.get("x", 0.0))))
+	# A new transform reaches the renderer only at the end of the frame; force_draw
+	# inside the same step would draw from the previous pose (one request late).
+	_camera.force_update_transform()
 
 func _quit(message: String) -> void:
 	push_error(message)
