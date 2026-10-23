@@ -3,7 +3,7 @@
 # benchmark client (bench_client: one request at a time, no sleep, keeps its asset
 # time moving while it waits). Per size: round trip, Godot's parts, and the RTF of
 # the run (requests back to back, so every step that is not waiting renders).
-# Usage: CORE_PRO_BUILD=<core-pro>/cmake-build [COUNT=300] [SIZES="640x480 1280x720"] bash examples/render_camera/run_bench.bash
+# Usage: CORE_PRO_BUILD=<core-pro>/cmake-build [COUNT=300] [SIZES="640x480 1280x720"] [GODOT_ARGS="--world-glb=..."] bash examples/render_camera/run_bench.bash
 set -u
 
 REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -82,7 +82,7 @@ JSON
     "${BIN}/polling_conductor" > "${dir}/conductor.log" 2>&1 & PIDS+=($!)
     sleep 1
     "${GODOT_BIN}" --fixed-fps 1000 --resolution 320x240 --path "${EXAMPLE_DIR}" -- \
-        "--service-json=${dir}/service.json" > "${dir}/godot.log" 2>&1 & PIDS+=($!)
+        "--service-json=${dir}/service.json" ${GODOT_ARGS:-} > "${dir}/godot.log" 2>&1 & PIDS+=($!)
     if ! wait_for "${dir}/godot.log" "SERVER registered" 30; then
         echo "${size},FAIL: Godot did not register (${dir})"
         cleanup
