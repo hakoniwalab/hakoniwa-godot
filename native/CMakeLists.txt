@@ -65,6 +65,7 @@ target_sources(
     src/hakoniwa_core_asset.cpp
     src/hakoniwa_codec_registry.cpp
     src/hakoniwa_pdu_endpoint.cpp
+    src/hakoniwa_service.cpp
     src/register_types.cpp
 )
 
