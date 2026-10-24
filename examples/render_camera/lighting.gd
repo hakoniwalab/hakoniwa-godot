@@ -180,9 +180,9 @@ func attach_to(camera: Camera3D) -> void:
 	compositor.compositor_effects = [lens_effects, white_balance]
 	camera.compositor = compositor
 
-func apply_color(photometric: Dictionary, horizontal_fov_rad: float) -> void:
+func apply_color(photometric: Dictionary) -> void:
 	var effects: Dictionary = photometric.get("effects", {})
-	lens_effects.set_effects(effects, horizontal_fov_rad)
+	lens_effects.set_effects(effects)
 	# Bloom: Godot's glow on scene values above 1, added before the tone map
 	# (additive blend; the default soft light blends after the tone map).
 	var bloom := float(effects.get("bloom", 0.0))

@@ -247,8 +247,14 @@ func _handle_frame_request(registry: Node, body: Dictionary) -> void:
 		_camera.keep_aspect = Camera3D.KEEP_WIDTH
 		Lighting.apply_lens(_camera_attributes, fov, profile["near"], profile["far"])
 		_lighting.apply_exposure(_camera_attributes, profile["exposure"])
-		_lighting.apply_color(profile["photometric"], fov)
+		_lighting.apply_color(profile["photometric"])
 		_apply_ros_enu_pose(body["camera_pose"])
+		# Lens effects are defined on the output image; they need the lens and the image
+		# drawn for it (the output itself, a wider pinhole or cube faces).
+		var drawn_focal: float = lens.fx
+		if warp:
+			drawn_focal = lens.cube_focal if lens.cube else lens.source_focal
+		_lighting.lens_effects.set_geometry(lens, drawn_focal, _camera.global_transform.basis)
 		if warp:
 			if _warp_viewport.size != size:
 				_warp_viewport.size = size
