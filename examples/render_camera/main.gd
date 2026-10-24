@@ -17,6 +17,7 @@ extends Node
 #   --camera-pose=x,y,z,yaw_deg use this camera pose (ROS world frame, m and deg) instead of the request's
 #   --save-frame-dir=<dir>      save the 10th rendered frame of each size as PNG
 #   --test-chart=x,y,z,yaw_deg  place a reflectance test chart (ROS world frame, m and deg)
+#   --test-board=x,y,z,yaw,pitch,roll,cols,rows,square_m  place a calibration checkerboard
 #   --sun-time=, --sun-lux=, --sun-kelvin=, --sky-intensity=, --latitude=, --longitude=,
 #   --auto-exposure-speed=      daylight in physical units, auto exposure speed (lighting.gd)
 #   --light-step=sim_sec,factor scale all daylight by factor from this simulation time
@@ -26,6 +27,7 @@ extends Node
 const SimNodeScript = preload("res://addons/hakoniwa/scripts/hakoniwa_simulation_node.gd")
 const CodecNodeScript = preload("res://addons/hakoniwa/scripts/hakoniwa_codec_node.gd")
 const Lighting = preload("res://lighting.gd")
+const Lens = preload("res://lens.gd")
 const ASSET_NAME := "GodotRenderCamera"
 const PACKAGE := "hako_srv_msgs"
 const LEGACY_SERVICE_NAME := "HakoCamera/RenderCamera"
@@ -36,6 +38,10 @@ var _codec = null
 var _server: HakoniwaServiceServer = null
 var _pending_response := PackedByteArray()
 var _viewport: SubViewport
+# A lens that is not an ideal centred pinhole (spec.lens, memo 025): _viewport draws a
+# wider ideal pinhole image and _warp_viewport maps it to the lens's image.
+var _warp_viewport: SubViewport
+var _warp_material: ShaderMaterial
 var _camera: Camera3D
 var _rotor: MeshInstance3D
 var _world_glb := ""
@@ -49,6 +55,7 @@ var _profiles := {}
 var _lighting = Lighting.new()
 var _camera_attributes: CameraAttributesPhysical
 var _test_chart := PackedFloat64Array()
+var _test_board := PackedFloat64Array()
 var _light_step := PackedFloat64Array()
 var _light_step_done := false
 var _probe := PackedInt32Array()
@@ -90,6 +97,8 @@ func _ready() -> void:
 		elif arg.begins_with("--probe="):
 			var xy := arg.trim_prefix("--probe=").split_floats(",")
 			_probe = PackedInt32Array([int(xy[0]), int(xy[1])])
+		elif arg.begins_with("--test-board="):
+			_test_board = arg.trim_prefix("--test-board=").split_floats(",")
 		elif arg.begins_with("--test-chart="):
 			_test_chart = arg.trim_prefix("--test-chart=").split_floats(",")
 		elif _lighting.parse_option(arg):
@@ -225,11 +234,19 @@ func _handle_frame_request(registry: Node, body: Dictionary) -> void:
 	var image: Image = null
 	if outputs & 1:
 		var size := Vector2i(profile["width"], profile["height"])
-		_resize_viewport(size)
+		var lens = profile["lens"]
+		var warp: bool = not lens.is_ideal()
+		var fov: float = lens.source_horizontal_fov() if warp else profile["horizontal_fov"]
+		_resize_viewport(Vector2i(lens.source_width, lens.source_height) if warp else size)
 		_camera.keep_aspect = Camera3D.KEEP_WIDTH
-		Lighting.apply_lens(_camera_attributes, profile["horizontal_fov"], profile["near"], profile["far"])
+		Lighting.apply_lens(_camera_attributes, fov, profile["near"], profile["far"])
 		_lighting.apply_exposure(_camera_attributes, profile["exposure"])
-		_lighting.apply_color(profile["photometric"], profile["horizontal_fov"])
+		_lighting.apply_color(profile["photometric"], fov)
+		if warp:
+			if _warp_viewport.size != size:
+				_warp_viewport.size = size
+			lens.set_shader_parameters(_warp_material, _viewport.get_texture())
+			_warp_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 		_apply_ros_enu_pose(body["camera_pose"])
 		if _light_step.size() == 2 and not _light_step_done and sim_time_usec >= int(_light_step[0] * 1000000.0):
 			_lighting.scale_light(_light_step[1])
@@ -238,7 +255,8 @@ func _handle_frame_request(registry: Node, body: Dictionary) -> void:
 		RenderingServer.force_draw(false, _frame_step_sec(camera_name, sim_time_usec))
 	var readback_start := Time.get_ticks_usec()
 	if outputs & 1:
-		image = _viewport.get_texture().get_image()
+		var target := _warp_viewport if not profile["lens"].is_ideal() else _viewport
+		image = target.get_texture().get_image()
 	var convert_start := Time.get_ticks_usec()
 	if image != null:
 		image.convert(Image.FORMAT_RGB8)
@@ -330,9 +348,16 @@ func _load_profile(path: String) -> void:
 	if typeof(exposure) != TYPE_DICTIONARY:
 		_profile_error(path, "/spec/photometric/exposure", "must be an object")
 		return
+	var lens = Lens.new()
+	if not lens.load_spec(root["spec"]):
+		_profile_error(path, "/spec/lens", lens.error)
+		return
+	if not lens.is_ideal() and not lens.compute_source():
+		_profile_error(path, "/spec/lens", lens.error)
+		return
 	_profiles[values[0]] = {"width": values[1], "height": values[2], "format": values[3],
 		"horizontal_fov": float(values[4]), "near": float(values[5]), "far": float(values[6]),
-		"exposure": exposure, "photometric": photometric}
+		"exposure": exposure, "photometric": photometric, "lens": lens}
 
 func _print_probe(image: Image, sim_time_usec: int) -> void:
 	var sum := Vector3.ZERO
@@ -382,11 +407,25 @@ func _build_world() -> bool:
 	_viewport.msaa_3d = Viewport.MSAA_DISABLED
 	_viewport.use_taa = false
 	add_child(_viewport)
+	# After _viewport in the tree, so it draws after the source it reads.
+	_warp_viewport = SubViewport.new()
+	_warp_viewport.size = Vector2i(640, 480)
+	_warp_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	_warp_viewport.disable_3d = true
+	var warp_rect := ColorRect.new()
+	warp_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_warp_material = ShaderMaterial.new()
+	_warp_material.shader = preload("res://lens_warp.gdshader")
+	warp_rect.material = _warp_material
+	_warp_viewport.add_child(warp_rect)
+	add_child(_warp_viewport)
 	var world := Node3D.new()
 	_viewport.add_child(world)
 	_lighting.add_to(world)
 	if _test_chart.size() == 4:
 		Lighting.add_test_chart(world, _test_chart)
+	if _test_board.size() == 9:
+		Lighting.add_test_board(world, _test_board)
 	if not _world_glb.is_empty():
 		return _load_world_glb(world)
 	var box := BoxMesh.new()

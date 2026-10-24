@@ -262,6 +262,38 @@ static func add_test_chart(world: Node3D, ros_pose: PackedFloat64Array) -> void:
 		patch.name = CHART_PATCHES[i][0]
 		chart.add_child(patch)
 
+# A checkerboard for camera calibration (memo 025): cols x rows squares of square_m,
+# unshaded (black and white whatever the light), placed in the ROS world frame
+# (x forward/North, y left/West, z up) with yaw, pitch and roll in degrees; the board
+# faces its local +Z (Godot), i.e. the camera when yaw, pitch and roll are 0 and the
+# camera looks north. OpenCV finds (cols - 1) x (rows - 1) inner corners.
+static func add_test_board(world: Node3D, pose: PackedFloat64Array) -> void:
+	var cols := int(pose[6])
+	var rows := int(pose[7])
+	var square := pose[8]
+	var board := Node3D.new()
+	board.name = "TestBoard"
+	board.position = Vector3(-pose[1], pose[2], -pose[0])
+	board.rotation = Vector3(deg_to_rad(pose[4]), deg_to_rad(pose[3]), deg_to_rad(pose[5]))
+	world.add_child(board)
+	var white := StandardMaterial3D.new()
+	white.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	white.albedo_color = Color(1, 1, 1)
+	var black := StandardMaterial3D.new()
+	black.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	black.albedo_color = Color(0, 0, 0)
+	var quad := QuadMesh.new()
+	quad.size = Vector2(square, square)
+	# A white border of one square around the pattern helps the corner detector.
+	for row in range(-1, rows + 1):
+		for col in range(-1, cols + 1):
+			var cell := MeshInstance3D.new()
+			cell.mesh = quad
+			var inside := row >= 0 and row < rows and col >= 0 and col < cols
+			cell.material_override = black if inside and (row + col) % 2 == 0 else white
+			cell.position = Vector3((col - (cols - 1) / 2.0) * square, ((rows - 1) / 2.0 - row) * square, 0.0)
+			board.add_child(cell)
+
 # Unit vector toward the sun in the Godot frame (azimuth from North, clockwise).
 static func _direction(azimuth_deg: float, elevation_deg: float) -> Vector3:
 	var a := deg_to_rad(azimuth_deg)
