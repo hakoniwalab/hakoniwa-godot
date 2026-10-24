@@ -265,6 +265,13 @@ cmake -S . -B build -DHAKONIWA_GODOT_CODEC_PACKAGES="hako_msgs;std_msgs;geometry
 cmake --build build -j4
 ```
 
+サービス（`hako_srv_msgs`、例：`RenderCameraFrame`）を受けて、Urban Mobility の場面の PDU（車と人の `vehicle_states`・`joint_states`、信号の `std_msgs/UInt32`）を読むアプリには、次の package が要ります。
+
+```bash
+bash tools/codec_plugin_tool.sh configure --build-dir build-service --packages "hako_msgs;hako_srv_msgs;sensor_msgs;std_msgs;geometry_msgs"
+bash tools/codec_plugin_tool.sh build --build-dir build-service
+```
+
 全 codec を明示指定する場合:
 
 ```bash
