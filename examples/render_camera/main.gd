@@ -272,6 +272,7 @@ func _handle_frame_request(registry: Node, body: Dictionary) -> void:
 			_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 		var frame_step := _frame_step_sec(camera_name, sim_time_usec)
 		_lighting.auto_exposure.begin_frame(camera_name)
+		_lighting.lens_effects.begin_frame(camera_name)
 		RenderingServer.force_draw(false, frame_step)
 	var readback_start := Time.get_ticks_usec()
 	if outputs & 1:
@@ -279,6 +280,7 @@ func _handle_frame_request(registry: Node, body: Dictionary) -> void:
 		image = target.get_texture().get_image()
 		# The frame is drawn: meter it for the next frames of this camera.
 		_lighting.auto_exposure.end_frame(_last_frame_step)
+		_lighting.lens_effects.end_frame()
 	var convert_start := Time.get_ticks_usec()
 	if image != null:
 		image.convert(Image.FORMAT_RGB8)

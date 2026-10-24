@@ -8,6 +8,14 @@ extends CompositorEffect
 #   - lateral chromatic aberration: red and blue displaced from green by
 #     chromatic_aberration_px at that corner (red outward, blue inward), linear in
 #     the distance from (cx, cy)
+#   - veiling glare (ISO 9358; hakoniwa-scenario memo 027 2b): light scattered in the
+#     lens adds a uniform veil, veiling_glare_index x the mean of the image the lens
+#     forms (sun pixels included). With a uniform bright field and no vignetting the
+#     veil over the field is the index, as ISO 9358's veiling glare index. The mean is
+#     over the output image: each drawn pixel weighs the output-image area it covers.
+#     A camera drawn as one image adds the veil of the same frame (the mean is summed
+#     on the GPU before the veil is added); cube faces are drawn one after another,
+#     so they add the veil of the camera's previous frame (memo 027).
 # RGB only: MuJoCo's depth and segmentation keep the geometric reference.
 #
 # The image drawn here is not always the output image: a lens that is not an ideal
@@ -31,8 +39,14 @@ layout(set = 0, binding = 2, std430) restrict readonly buffer Params {
 	// 14-30: output lens fx, fy, cx, cy, skew, projection, use_brown, k1, k2, p1, p2, k3,
 	//        kb0..kb3, cutoff angle
 	// 31-33: vignette k^2, aberration px at the corner, corner distance px
+	// 34-36: veiling glare on (1) or off (0), output image width, height
 	float v[];
 } params;
+// Per work group: the sum of RGB x weight and of the weight (output-image area).
+layout(set = 0, binding = 3, std430) restrict writeonly buffer Partials {
+	vec4 sums[];
+} partials;
+shared vec4 group_sums[64];
 
 const float PI = 3.14159265358979;
 
@@ -91,36 +105,62 @@ vec3 drawn_ray(vec2 position) {
 	return axes * local;
 }
 
-void main() {
-	ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
-	if (pixel.x >= int(params.v[0]) || pixel.y >= int(params.v[1])) {
-		return;
-	}
+// The lens effects of one drawn pixel; weight is the output-image area it covers
+// (0 when its ray does not land in the output image).
+vec4 lens_pixel(ivec2 pixel, out float weight) {
+	weight = 0.0;
 	vec2 position = vec2(pixel);
 	vec4 color = imageLoad(source_image, pixel);
 	vec2 output_position;
 	if (!project_output(drawn_ray(position), output_position)) {
-		imageStore(color_image, pixel, color);
-		return;
+		return color;
 	}
 	vec2 centre = vec2(params.v[16], params.v[17]);
 	vec2 offset = output_position - centre;
-	if (params.v[32] > 0.0) {
-		// Output-image shift, converted to this image with the projection's local
-		// derivative (one-pixel differences): the red seen here came from further in.
+	// The projection's local derivative (one-pixel differences): output-image pixels
+	// per drawn pixel.
+	vec2 px, py;
+	bool has_jacobian = project_output(drawn_ray(position + vec2(1.0, 0.0)), px) && project_output(drawn_ray(position + vec2(0.0, 1.0)), py);
+	mat2 jacobian = has_jacobian ? mat2(px - output_position, py - output_position) : mat2(1.0);
+	if (params.v[32] > 0.0 && has_jacobian) {
+		// Output-image shift converted to this image: the red seen here came from further in.
 		vec2 shift = offset / params.v[33] * params.v[32];
-		vec2 px, py;
-		if (project_output(drawn_ray(position + vec2(1.0, 0.0)), px) && project_output(drawn_ray(position + vec2(0.0, 1.0)), py)) {
-			mat2 jacobian = mat2(px - output_position, py - output_position);
-			vec2 drawn_shift = inverse(jacobian) * shift;
-			color.r = load_bilinear(position - drawn_shift).r;
-			color.b = load_bilinear(position + drawn_shift).b;
-		}
+		vec2 drawn_shift = inverse(jacobian) * shift;
+		color.r = load_bilinear(position - drawn_shift).r;
+		color.b = load_bilinear(position + drawn_shift).b;
 	}
 	float rho_squared = dot(offset, offset) / (params.v[14] * params.v[14]);
 	float falloff = 1.0 + params.v[31] * rho_squared;
 	color.rgb /= falloff * falloff;
-	imageStore(color_image, pixel, color);
+	vec2 output_size = vec2(params.v[35], params.v[36]);
+	bool in_output = all(greaterThanEqual(output_position, vec2(-0.5))) && all(lessThan(output_position, output_size - 0.5));
+	if (has_jacobian && in_output) {
+		weight = abs(determinant(jacobian));
+	}
+	return color;
+}
+
+void main() {
+	ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+	vec4 contribution = vec4(0.0);
+	if (pixel.x < int(params.v[0]) && pixel.y < int(params.v[1])) {
+		float weight;
+		vec4 color = lens_pixel(pixel, weight);
+		imageStore(color_image, pixel, color);
+		contribution = vec4(color.rgb * weight, weight);
+	}
+	if (params.v[34] > 0.5) {
+		uint index = gl_LocalInvocationIndex;
+		group_sums[index] = contribution;
+		barrier();
+		if (index == 0u) {
+			vec4 total = vec4(0.0);
+			for (uint i = 0u; i < 64u; i++) {
+				total += group_sums[i];
+			}
+			partials.sums[gl_WorkGroupID.y * gl_NumWorkGroups.x + gl_WorkGroupID.x] = total;
+		}
+	}
 }
 """
 
@@ -143,12 +183,88 @@ void main() {
 }
 """
 
+# Veiling glare: the work groups' sums added into the frame's total (one group).
+const REDUCE_SHADER_CODE := """
+#version 450
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+layout(set = 0, binding = 0, std430) restrict readonly buffer Partials {
+	vec4 sums[];
+} partials;
+layout(set = 0, binding = 1, std430) restrict buffer Frame {
+	vec4 total;
+} frame;
+layout(push_constant, std430) uniform Params {
+	uint count;
+	uint unused0;
+	uint unused1;
+	uint unused2;
+} params;
+shared vec4 sums[256];
+
+void main() {
+	uint index = gl_LocalInvocationIndex;
+	vec4 sum = vec4(0.0);
+	for (uint i = index; i < params.count; i += 256u) {
+		sum += partials.sums[i];
+	}
+	sums[index] = sum;
+	barrier();
+	for (uint stride = 128u; stride > 0u; stride >>= 1u) {
+		if (index < stride) {
+			sums[index] += sums[index + stride];
+		}
+		barrier();
+	}
+	if (index == 0u) {
+		frame.total += sums[0];
+	}
+}
+"""
+
+# Veiling glare: the veil added to every pixel, from the frame's total so far (a camera
+# drawn as one image) or from the camera's previous frame (cube faces).
+const VEIL_SHADER_CODE := """
+#version 450
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+layout(rgba16f, set = 0, binding = 0) uniform image2D color_image;
+layout(set = 0, binding = 1, std430) restrict readonly buffer Frame {
+	vec4 total;
+} frame;
+layout(push_constant, std430) uniform Params {
+	vec2 size;
+	float glare_index;
+	float use_frame_total;
+	vec4 previous_mean;
+} params;
+
+void main() {
+	ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+	if (pixel.x >= int(params.size.x) || pixel.y >= int(params.size.y)) {
+		return;
+	}
+	vec3 mean = params.previous_mean.rgb;
+	if (params.use_frame_total > 0.5) {
+		mean = frame.total.w > 0.0 ? frame.total.rgb / frame.total.w : vec3(0.0);
+	}
+	vec4 color = imageLoad(color_image, pixel);
+	color.rgb += params.glare_index * mean;
+	imageStore(color_image, pixel, color);
+}
+"""
+
 const CONTEXT := &"hakoniwa_lens_effects"
 const SOURCE := &"source"
 const PARAM_COUNT := 64
 
 var vignette_corner := 1.0
 var aberration_px := 0.0
+var glare_index := 0.0
+# Godot's exposure normalization of the drawn values (for the printed luminance).
+var exposure_normalization := 1.0
+# Veiling glare: the camera of the frame being drawn and each camera's previous mean
+# image value (linear RGB, as drawn).
+var _camera := ""
+var _previous_mean := {}
 # The output lens (lens.gd) and how the image drawn now relates to it.
 var lens = null
 var drawn_focal := 1.0
@@ -159,6 +275,13 @@ var _pipeline: RID
 var _copy_shader: RID
 var _copy_pipeline: RID
 var _params: RID
+var _reduce_shader: RID
+var _reduce_pipeline: RID
+var _veil_shader: RID
+var _veil_pipeline: RID
+var _partials: RID
+var _partials_capacity := 0
+var _frame_total: RID
 
 func _init() -> void:
 	effect_callback_type = EFFECT_CALLBACK_TYPE_POST_TRANSPARENT
@@ -169,19 +292,24 @@ func _init() -> void:
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_PREDELETE and _rd != null:
-		for rid in [_shader, _copy_shader, _params]:
+		for rid in [_shader, _copy_shader, _params, _reduce_shader, _veil_shader, _partials, _frame_total]:
 			if rid.is_valid():
 				_rd.free_rid(rid)
 
 func _create_pipeline() -> void:
 	_shader = _compile(SHADER_CODE, "lens effects shader")
 	_copy_shader = _compile(COPY_SHADER_CODE, "lens effects copy shader")
-	if _shader.is_valid() and _copy_shader.is_valid():
+	_reduce_shader = _compile(REDUCE_SHADER_CODE, "veiling glare reduce shader")
+	_veil_shader = _compile(VEIL_SHADER_CODE, "veiling glare shader")
+	if _shader.is_valid() and _copy_shader.is_valid() and _reduce_shader.is_valid() and _veil_shader.is_valid():
 		_pipeline = _rd.compute_pipeline_create(_shader)
 		_copy_pipeline = _rd.compute_pipeline_create(_copy_shader)
+		_reduce_pipeline = _rd.compute_pipeline_create(_reduce_shader)
+		_veil_pipeline = _rd.compute_pipeline_create(_veil_shader)
 		var zeros := PackedFloat32Array()
 		zeros.resize(PARAM_COUNT)
 		_params = _rd.storage_buffer_create(PARAM_COUNT * 4, zeros.to_byte_array())
+		_frame_total = _rd.storage_buffer_create(16, PackedFloat32Array([0, 0, 0, 0]).to_byte_array())
 
 func _compile(code: String, label: String) -> RID:
 	var source := RDShaderSource.new()
@@ -196,6 +324,25 @@ func _compile(code: String, label: String) -> RID:
 func set_effects(effects: Dictionary) -> void:
 	vignette_corner = float(effects.get("vignette_corner", 1.0))
 	aberration_px = float(effects.get("chromatic_aberration_px", 0.0))
+	glare_index = float(effects.get("veiling_glare_index", 0.0))
+
+# The camera of the next frame (its previous mean is the veil of cube faces).
+func begin_frame(camera_name: String) -> void:
+	_camera = camera_name
+
+# After a frame is drawn and read back: the camera's mean image value for its next
+# frame; the frame's total starts again from zero.
+func end_frame() -> void:
+	if glare_index <= 0.0 or not _frame_total.is_valid():
+		return
+	var total := _rd.buffer_get_data(_frame_total).to_float32_array()
+	_rd.buffer_clear(_frame_total, 0, 16)
+	if total[3] <= 0.0:
+		return
+	var mean := Vector3(total[0], total[1], total[2]) / total[3]
+	_previous_mean[_camera] = mean
+	var luminance := (0.2126 * mean.x + 0.7152 * mean.y + 0.0722 * mean.z) / exposure_normalization
+	print("VEILING_GLARE camera=%s mean_luminance=%.1f veil_luminance=%.1f" % [_camera, luminance, glare_index * luminance])
 
 # The output lens, the focal length of the image(s) drawn for it, and the main camera's
 # basis (cube face cameras are found relative to it).
@@ -205,7 +352,7 @@ func set_geometry(output_lens, focal_px: float, camera_basis: Basis) -> void:
 	main_basis = camera_basis
 
 func _render_callback(_callback_type: int, render_data: RenderData) -> void:
-	if lens == null or not _pipeline.is_valid() or not _copy_pipeline.is_valid() or (vignette_corner >= 1.0 and aberration_px <= 0.0):
+	if lens == null or not _veil_pipeline.is_valid() or (vignette_corner >= 1.0 and aberration_px <= 0.0 and glare_index <= 0.0):
 		return
 	var buffers := render_data.get_render_scene_buffers() as RenderSceneBuffersRD
 	if buffers == null:
@@ -214,11 +361,35 @@ func _render_callback(_callback_type: int, render_data: RenderData) -> void:
 	var camera_basis := render_data.get_render_scene_data().get_cam_transform().basis
 	_rd.buffer_update(_params, 0, PARAM_COUNT * 4, _parameters(size, camera_basis).to_byte_array())
 	var copy_push := PackedFloat32Array([size.x, size.y, 0.0, 0.0]).to_byte_array()
+	# The lens shader always binds the partial sums (a pipeline needs every binding it
+	# declares); it writes them only with veiling glare.
+	var groups := ceili(size.x / 8.0) * ceili(size.y / 8.0)
+	_ensure_partials(groups)
 	for view in buffers.get_view_count():
 		var color := buffers.get_color_layer(view)
 		var copy := _source_texture(buffers, color, size)
 		_dispatch(_copy_shader, _copy_pipeline, [copy, color], copy_push, size)
-		_dispatch(_shader, _pipeline, [color, copy], PackedByteArray(), size, _params)
+		_dispatch(_shader, _pipeline, [color, copy], PackedByteArray(), size, [_params, _partials])
+		if glare_index > 0.0:
+			_add_veil(color, size, groups)
+
+# The veil of this view: its sum goes into the frame's total, then the veil is added.
+func _add_veil(color: RID, size: Vector2i, groups: int) -> void:
+	var reduce_push := PackedInt32Array([groups, 0, 0, 0]).to_byte_array()
+	_dispatch_buffers(_reduce_shader, _reduce_pipeline, [_partials, _frame_total], reduce_push)
+	var same_frame: bool = not lens.cube
+	var previous: Vector3 = _previous_mean.get(_camera, Vector3.ZERO)
+	var veil_push := PackedFloat32Array([size.x, size.y, glare_index, 1.0 if same_frame else 0.0,
+		previous.x, previous.y, previous.z, 0.0]).to_byte_array()
+	_dispatch(_veil_shader, _veil_pipeline, [color], veil_push, size, [_frame_total])
+
+func _ensure_partials(groups: int) -> void:
+	if groups <= _partials_capacity:
+		return
+	if _partials.is_valid():
+		_rd.free_rid(_partials)
+	_partials = _rd.storage_buffer_create(groups * 16)
+	_partials_capacity = groups
 
 func _parameters(size: Vector2i, camera_basis: Basis) -> PackedFloat32Array:
 	var p := PackedFloat32Array()
@@ -266,10 +437,14 @@ func _parameters(size: Vector2i, camera_basis: Basis) -> PackedFloat32Array:
 	p[31] = (1.0 / sqrt(vignette_corner) - 1.0) / rho_corner_squared
 	p[32] = aberration_px
 	p[33] = corner
+	p[34] = 1.0 if glare_index > 0.0 else 0.0
+	p[35] = lens.width
+	p[36] = lens.height
 	return p
 
-# One compute pass: images[0] is written, images[1] read; an optional storage buffer.
-func _dispatch(shader: RID, pipeline: RID, images: Array, push: PackedByteArray, size: Vector2i, buffer := RID()) -> void:
+# One compute pass over the image: images[0] is written, images[1] read; storage
+# buffers follow the images in binding order.
+func _dispatch(shader: RID, pipeline: RID, images: Array, push: PackedByteArray, size: Vector2i, buffers: Array = []) -> void:
 	var uniforms: Array[RDUniform] = []
 	for i in images.size():
 		var image_uniform := RDUniform.new()
@@ -277,19 +452,32 @@ func _dispatch(shader: RID, pipeline: RID, images: Array, push: PackedByteArray,
 		image_uniform.binding = i
 		image_uniform.add_id(images[i])
 		uniforms.append(image_uniform)
-	if buffer.is_valid():
-		var buffer_uniform := RDUniform.new()
-		buffer_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
-		buffer_uniform.binding = 2
-		buffer_uniform.add_id(buffer)
-		uniforms.append(buffer_uniform)
+	for i in buffers.size():
+		uniforms.append(_buffer_uniform(buffers[i], images.size() + i))
+	_run(shader, pipeline, uniforms, push, Vector3i(ceili(size.x / 8.0), ceili(size.y / 8.0), 1))
+
+# One work group over storage buffers only (binding order).
+func _dispatch_buffers(shader: RID, pipeline: RID, buffers: Array, push: PackedByteArray) -> void:
+	var uniforms: Array[RDUniform] = []
+	for i in buffers.size():
+		uniforms.append(_buffer_uniform(buffers[i], i))
+	_run(shader, pipeline, uniforms, push, Vector3i(1, 1, 1))
+
+func _buffer_uniform(buffer: RID, binding: int) -> RDUniform:
+	var uniform := RDUniform.new()
+	uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
+	uniform.binding = binding
+	uniform.add_id(buffer)
+	return uniform
+
+func _run(shader: RID, pipeline: RID, uniforms: Array[RDUniform], push: PackedByteArray, groups: Vector3i) -> void:
 	var uniform_set := UniformSetCacheRD.get_cache(shader, 0, uniforms)
 	var list := _rd.compute_list_begin()
 	_rd.compute_list_bind_compute_pipeline(list, pipeline)
 	_rd.compute_list_bind_uniform_set(list, uniform_set, 0)
 	if not push.is_empty():
 		_rd.compute_list_set_push_constant(list, push, push.size())
-	_rd.compute_list_dispatch(list, ceili(size.x / 8.0), ceili(size.y / 8.0), 1)
+	_rd.compute_list_dispatch(list, groups.x, groups.y, groups.z)
 	_rd.compute_list_end()
 
 # A copy of the colour image, kept by the render buffers (recreated when the size changes).

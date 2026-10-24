@@ -264,6 +264,7 @@ func apply_exposure(attributes: CameraAttributesPhysical, exposure: Dictionary) 
 	var normalization := multiplier / (1.2 * pow(2.0, _ev100(iso, f_number, shutter_s)))
 	_set_sky("cubemap_scale", 1.0 / normalization)
 	fog_effect.exposure_normalization = normalization
+	lens_effects.exposure_normalization = normalization
 	# The schema's default mode is auto, but only when the profile has an exposure block.
 	# Godot's auto exposure is not used: it meters the mean luminance, so a few sun
 	# pixels set the exposure (memo 027); auto_exposure.gd meters a histogram.
