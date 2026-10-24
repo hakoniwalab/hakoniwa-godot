@@ -1,5 +1,7 @@
 extends RefCounted
 
+const ColorTemperature = preload("res://color_temperature.gd")
+
 # Daylight in physical units (C3, hakoniwa-scenario memo 024): the sun in lux, the sky
 # in nits, ambient and reflections from the sky, and a camera with physical exposure
 # (ISO, shutter, aperture). With these, exposure values mean what they mean on a real
@@ -28,6 +30,8 @@ var sun_lux := DEFAULT_SUN_LUX
 var sun_kelvin := DEFAULT_SUN_KELVIN
 var sky_intensity := DEFAULT_SKY_INTENSITY
 var sky_material: ShaderMaterial
+var environment: Environment
+var white_balance = preload("res://white_balance.gd").new()
 var sun_elevation_deg := 0.0
 var sun_azimuth_deg := 0.0
 
@@ -53,8 +57,7 @@ func parse_option(arg: String) -> bool:
 func add_to(world: Node3D) -> void:
 	var sun := DirectionalLight3D.new()
 	sun.name = "Sun"
-	sun.light_intensity_lux = sun_lux
-	sun.light_temperature = sun_kelvin
+	_set_sun_colour(sun)
 	sun.shadow_enabled = true
 	sun.sky_mode = DirectionalLight3D.SKY_MODE_LIGHT_AND_SKY
 	var position := _sun_position()
@@ -70,20 +73,33 @@ func add_to(world: Node3D) -> void:
 	sky_material = ShaderMaterial.new()
 	sky_material.shader = preload("res://physical_sky.gdshader")
 	sky.sky_material = sky_material
-	var environment := Environment.new()
+	environment = Environment.new()
 	environment.background_mode = Environment.BG_SKY
 	environment.sky = sky
 	environment.background_intensity = sky_intensity
 	environment.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 	environment.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
-	# Linear: the pixel is exposure x luminance, so exposure steps can be measured.
-	# The photometric tone map comes with the profile (memo 024, step 3).
+	# Linear until a profile asks for a tone map (apply_color).
 	environment.tonemap_mode = Environment.TONE_MAPPER_LINEAR
 	var world_environment := WorldEnvironment.new()
 	world_environment.environment = environment
 	world.add_child(world_environment)
 	print("LIGHT time=%s sun_elevation_deg=%.2f sun_azimuth_deg=%.2f sun_lux=%.0f sun_kelvin=%.0f sky_intensity=%.0f" % [
 		time_text, sun_elevation_deg, sun_azimuth_deg, sun_lux, sun_kelvin, sky_intensity])
+
+# The sun's colour on the daylight locus (color_temperature.gd), the same white the
+# camera's white balance uses. Godot multiplies light_color by its own (Planckian)
+# light_temperature colour, so that is divided out; the intensity is scaled so the
+# illuminance (luminance Y) stays sun_lux.
+func _set_sun_colour(sun: DirectionalLight3D) -> void:
+	sun.light_temperature = 6500.0
+	var wanted: Vector3 = ColorTemperature.white_rgb(sun_kelvin)
+	var godot: Vector3 = ColorTemperature.godot_light_rgb(6500.0)
+	var colour := Vector3(wanted.x / godot.x, wanted.y / godot.y, wanted.z / godot.z)
+	var largest := maxf(colour.x, maxf(colour.y, colour.z))
+	colour /= largest
+	sun.light_color = Color(colour.x, colour.y, colour.z).linear_to_srgb()
+	sun.light_intensity_lux = sun_lux * largest
 
 # Physical exposure at Godot's defaults (ISO 100, f/16, 1/100 s: Sunny 16). The camera
 # then takes its field of view from the focal length and its clip from frustum_near/far,
@@ -122,6 +138,59 @@ func apply_exposure(attributes: CameraAttributesPhysical, exposure: Dictionary) 
 # Exposure value at ISO 100: log2(N^2 / t x 100 / S).
 static func _ev100(iso: float, f_number: float, shutter_s: float) -> float:
 	return log(f_number * f_number / shutter_s * 100.0 / iso) / log(2.0)
+
+# The camera's colour processing, in Godot's order (memo 024 step 3):
+#   exposure -> white balance (compositor effect, linear) -> [auto exposure, glow]
+#   -> tone map -> output encoding (sRGB, or the profile's gamma through the colour
+#   correction table).
+# Without photometric settings: linear tone map, no white balance, sRGB output.
+const TONE_MAPS := {
+	"linear": Environment.TONE_MAPPER_LINEAR,
+	"aces": Environment.TONE_MAPPER_ACES,
+	"agx": Environment.TONE_MAPPER_AGX,
+	"filmic": Environment.TONE_MAPPER_FILMIC,
+}
+# Scene value that the ACES and filmic curves map to 1 (Godot divides the curve by its
+# value here). Godot's default 1.0 clips everything above 1 like the linear curve, so
+# no highlight roll-off; AgX has its own white (tonemap_agx_white, 16.29 = Blender's).
+# The same white for all three keeps about 4 stops above a white surface in the curve.
+const TONE_MAP_WHITE := 16.29
+const GAMMA_TABLE_SIZE := 1024
+var _gamma_tables := {}
+
+func attach_to(camera: Camera3D) -> void:
+	var compositor := Compositor.new()
+	compositor.compositor_effects = [white_balance]
+	camera.compositor = compositor
+
+func apply_color(photometric: Dictionary) -> void:
+	environment.tonemap_mode = TONE_MAPS.get(String(photometric.get("tone_map", "linear")), Environment.TONE_MAPPER_LINEAR)
+	environment.tonemap_white = TONE_MAP_WHITE
+	var balance: Dictionary = photometric.get("white_balance", {})
+	white_balance.set_white_balance(float(balance.get("temperature_k", 6500.0)), float(balance.get("tint", 0.0)))
+	if photometric.has("gamma"):
+		environment.adjustment_enabled = true
+		environment.adjustment_color_correction = _gamma_table(float(photometric["gamma"]))
+	else:
+		environment.adjustment_enabled = false
+		environment.adjustment_color_correction = null
+
+# Godot encodes the tone-mapped value as sRGB and then looks it up in the colour
+# correction table, whose output is the final pixel. To get value^(1 / gamma) instead
+# of sRGB, the table decodes sRGB and applies the power (no second encoding).
+func _gamma_table(gamma: float) -> Texture2D:
+	if _gamma_tables.has(gamma):
+		return _gamma_tables[gamma]
+	var data := PackedFloat32Array()
+	for i in GAMMA_TABLE_SIZE:
+		var encoded := float(i) / (GAMMA_TABLE_SIZE - 1)
+		var linear := encoded / 12.92 if encoded <= 0.04045 else pow((encoded + 0.055) / 1.055, 2.4)
+		var value := pow(linear, 1.0 / gamma)
+		data.append_array([value, value, value])
+	var image := Image.create_from_data(GAMMA_TABLE_SIZE, 1, false, Image.FORMAT_RGBF, data.to_byte_array())
+	var texture := ImageTexture.create_from_image(image)
+	_gamma_tables[gamma] = texture
+	return texture
 
 static func apply_lens(attributes: CameraAttributesPhysical, horizontal_fov_rad: float, near: float, far: float) -> void:
 	attributes.frustum_focal_length = HALF_SENSOR_MM / tan(horizontal_fov_rad * 0.5)

@@ -218,6 +218,7 @@ func _handle_frame_request(registry: Node, body: Dictionary) -> void:
 		_camera.keep_aspect = Camera3D.KEEP_WIDTH
 		Lighting.apply_lens(_camera_attributes, profile["horizontal_fov"], profile["near"], profile["far"])
 		_lighting.apply_exposure(_camera_attributes, profile["exposure"])
+		_lighting.apply_color(profile["photometric"])
 		_apply_ros_enu_pose(body["camera_pose"])
 		_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 		RenderingServer.force_draw(false, _frame_step_sec(camera_name, sim_time_usec))
@@ -303,13 +304,19 @@ func _load_profile(path: String) -> void:
 	if values[0].is_empty() or values[1] <= 0 or values[2] <= 0 or values[4] <= 0.0 or values[5] <= 0.0 or values[6] <= values[5]:
 		_profile_error(path, "/spec", "contains an invalid value")
 		return
-	var exposure = _profile_value(root, "/spec/photometric/exposure")[1]
-	if exposure != null and typeof(exposure) != TYPE_DICTIONARY:
+	var photometric = _profile_value(root, "/spec/photometric")[1]
+	if photometric != null and typeof(photometric) != TYPE_DICTIONARY:
+		_profile_error(path, "/spec/photometric", "must be an object")
+		return
+	if photometric == null:
+		photometric = {}
+	var exposure = photometric.get("exposure", {})
+	if typeof(exposure) != TYPE_DICTIONARY:
 		_profile_error(path, "/spec/photometric/exposure", "must be an object")
 		return
 	_profiles[values[0]] = {"width": values[1], "height": values[2], "format": values[3],
 		"horizontal_fov": float(values[4]), "near": float(values[5]), "far": float(values[6]),
-		"exposure": exposure if exposure != null else {}}
+		"exposure": exposure, "photometric": photometric}
 
 func _frame_step_sec(camera_name: String, sim_time_usec: int) -> float:
 	var last: int = _last_frame_usec.get(camera_name, sim_time_usec)
@@ -386,6 +393,7 @@ func _add_camera(world: Node3D) -> void:
 	_camera.attributes = _camera_attributes
 	_camera.keep_aspect = Camera3D.KEEP_HEIGHT
 	Lighting.apply_lens(_camera_attributes, deg_to_rad(70.0), 0.1, 1000.0)
+	_lighting.attach_to(_camera)
 	world.add_child(_camera)
 
 # The city GLB is "X=East, Y=Up, Z=-North" (a local ENU frame), which is Godot's frame
