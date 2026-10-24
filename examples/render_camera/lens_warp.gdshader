@@ -25,8 +25,14 @@ uniform sampler2D face_left : filter_linear, repeat_disable;
 uniform sampler2D face_up : filter_linear, repeat_disable;
 uniform sampler2D face_down : filter_linear, repeat_disable;
 uniform sampler2D face_back : filter_linear, repeat_disable;
-uniform vec2 face;        // focal, centre (pixels)
-uniform float face_size;
+uniform vec2 face;        // focal, centre (pixels, of the full face)
+// The drawn part of each face: x0, y0, width, height in face pixels (lens.gd cube_crops).
+uniform vec4 crop_front;
+uniform vec4 crop_right;
+uniform vec4 crop_left;
+uniform vec4 crop_up;
+uniform vec4 crop_down;
+uniform vec4 crop_back;
 
 const int ITERATIONS = 20;
 const float RESIDUAL_LIMIT = 1e-4;  // float32: looser than lens.py's 1e-6
@@ -109,7 +115,9 @@ vec3 cube_sample(vec3 ray) {
 		id = ray.y > 0.0 ? 4 : 3;
 		local = ray.y > 0.0 ? vec3(ray.x, -ray.z, ray.y) : vec3(ray.x, ray.z, -ray.y);
 	}
-	vec2 uv = (face.x * local.xy / local.z + face.y + 0.5) / face_size;
+	vec2 p = face.x * local.xy / local.z + face.y;
+	vec4 crop = id == 0 ? crop_front : id == 1 ? crop_right : id == 2 ? crop_left : id == 3 ? crop_up : id == 4 ? crop_down : crop_back;
+	vec2 uv = (p - crop.xy + 0.5) / crop.zw;
 	if (id == 0) return texture(face_front, uv).rgb;
 	if (id == 1) return texture(face_right, uv).rgb;
 	if (id == 2) return texture(face_left, uv).rgb;

@@ -35,6 +35,9 @@ var cube := false
 var cube_face_names: Array[String] = []
 var cube_size := 0
 var cube_focal := 1.0
+# The part of each face the output reads, by face name: Rect2i in face pixel
+# coordinates (lens.py cube_crops). Only that part is drawn (memo 026).
+var cube_crops := {}
 
 # Each face's frame (x_f, y_f, z_f) in the camera's optical frame (lens.py CUBE_FACES).
 const CUBE_FACES := {
@@ -212,6 +215,40 @@ func compute_cube(grid_step := 8) -> void:
 			cube_face_names.append(name)
 	cube_focal = maxf(fx, fy)
 	cube_size = 2 * (ceili(cube_focal) + CUBE_MARGIN_PX)
+	_compute_crops()
+
+# lens.py cube_crops: the bounding box of the face positions of a grid of output
+# pixels, plus a margin for the grid spacing and bilinear reads.
+func _compute_crops(grid_step := 4) -> void:
+	var centre := (cube_size - 1) / 2.0
+	var bounds := {}
+	var us: Array = range(0, width, grid_step)
+	us.append(width - 1)
+	var vs: Array = range(0, height, grid_step)
+	vs.append(height - 1)
+	for v in vs:
+		for u in us:
+			var ray := pixel_to_ray(u, v)
+			if ray == Vector3.ZERO:
+				continue
+			var name := face_of(ray)
+			var f: Array = CUBE_FACES[name]
+			var local := Vector3(f[0].dot(ray), f[1].dot(ray), f[2].dot(ray))
+			var p := Vector2(cube_focal * local.x / local.z + centre, cube_focal * local.y / local.z + centre)
+			if bounds.has(name):
+				var b: Array = bounds[name]
+				bounds[name] = [minf(b[0], p.x), minf(b[1], p.y), maxf(b[2], p.x), maxf(b[3], p.y)]
+			else:
+				bounds[name] = [p.x, p.y, p.x, p.y]
+	var margin := grid_step + 2
+	cube_crops.clear()
+	for name in bounds:
+		var b: Array = bounds[name]
+		var left := maxi(0, floori(b[0]) - margin)
+		var top := maxi(0, floori(b[1]) - margin)
+		var right := mini(cube_size - 1, ceili(b[2]) + margin)
+		var bottom := mini(cube_size - 1, ceili(b[3]) + margin)
+		cube_crops[name] = Rect2i(left, top, right - left + 1, bottom - top + 1)
 
 func cube_fov() -> float:
 	return 2.0 * atan(cube_size / 2.0 / cube_focal)
@@ -253,7 +290,9 @@ func set_shader_parameters(material: ShaderMaterial, source_textures: Dictionary
 		for name in CUBE_FACES:
 			material.set_shader_parameter("face_" + name, source_textures.get(name))
 		material.set_shader_parameter("face", Vector2(cube_focal, (cube_size - 1) / 2.0))
-		material.set_shader_parameter("face_size", float(cube_size))
+		for name in CUBE_FACES:
+			var crop: Rect2i = cube_crops.get(name, Rect2i(0, 0, cube_size, cube_size))
+			material.set_shader_parameter("crop_" + name, Vector4(crop.position.x, crop.position.y, crop.size.x, crop.size.y))
 	else:
 		material.set_shader_parameter("source_image", source_textures["source"])
 	material.set_shader_parameter("output_size", Vector2(width, height))

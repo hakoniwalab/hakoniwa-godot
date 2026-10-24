@@ -226,13 +226,21 @@ func _parameters(size: Vector2i, camera_basis: Basis) -> PackedFloat32Array:
 	p[0] = size.x
 	p[1] = size.y
 	p[2] = drawn_focal
-	p[3] = (size.x - 1) / 2.0
-	p[4] = (size.y - 1) / 2.0
 	# This view's axes in the output camera's optical frame: Godot's camera axes are
 	# optical x, -y, -z, and optical (x, y, z) is Godot local (x, -y, -z).
 	var relative := main_basis.inverse() * camera_basis
 	var to_optical := func(v: Vector3) -> Vector3: return Vector3(v.x, -v.y, -v.z)
 	var axes: Array = [to_optical.call(relative.x), to_optical.call(-relative.y), to_optical.call(-relative.z)]
+	# The axis is at the image centre, except on a cube face drawn as a crop: there it
+	# is the full face's centre in the crop's pixels.
+	var principal := Vector2(size - Vector2i.ONE) / 2.0
+	if lens.cube:
+		var name: String = lens.face_of(axes[2])
+		var crop: Rect2i = lens.cube_crops.get(name, Rect2i(Vector2i.ZERO, size))
+		var centre: float = (lens.cube_size - 1) / 2.0
+		principal = Vector2(centre - crop.position.x, centre - crop.position.y)
+	p[3] = principal.x
+	p[4] = principal.y
 	for i in 3:
 		p[5 + 3 * i] = axes[i].x
 		p[6 + 3 * i] = axes[i].y

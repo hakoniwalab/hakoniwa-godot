@@ -383,13 +383,28 @@ func _draw_cube_faces(lens) -> Dictionary:
 		var view: Dictionary = _face_view(name)
 		var viewport: SubViewport = view["viewport"]
 		var camera: Camera3D = view["camera"]
-		if viewport.size != Vector2i(lens.cube_size, lens.cube_size):
-			viewport.size = Vector2i(lens.cube_size, lens.cube_size)
+		var crop: Rect2i = lens.cube_crops[name]
+		if viewport.size != crop.size:
+			viewport.size = crop.size
+		_set_crop_frustum(camera, crop, lens.cube_focal, (lens.cube_size - 1) / 2.0)
 		camera.transform = _camera.transform * Transform3D(Lens.face_basis(name), Vector3.ZERO)
 		camera.force_update_transform()
 		viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 		textures[name] = viewport.get_texture()
 	return textures
+
+# Draw only the crop of a face: an off-axis frustum whose near-plane rectangle is the
+# crop's pixel edges (pixel centres at integers, so a pixel spans +-0.5) seen through
+# a pinhole of the face's focal length and centre. Godot's image y is up.
+func _set_crop_frustum(camera: Camera3D, crop: Rect2i, focal: float, centre: float) -> void:
+	var near := _camera_attributes.frustum_near
+	var middle := Vector2(crop.position) + Vector2(crop.size) / 2.0 - Vector2(0.5, 0.5)
+	camera.projection = Camera3D.PROJECTION_FRUSTUM
+	camera.keep_aspect = Camera3D.KEEP_WIDTH
+	camera.size = near * crop.size.x / focal
+	camera.frustum_offset = Vector2(near * (middle.x - centre) / focal, -near * (middle.y - centre) / focal)
+	camera.near = near
+	camera.far = _camera_attributes.frustum_far
 
 func _face_view(name: String) -> Dictionary:
 	if _face_views.has(name):
