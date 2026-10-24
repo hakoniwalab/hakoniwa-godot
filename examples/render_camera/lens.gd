@@ -30,6 +30,22 @@ var error := ""
 var source_width := 0
 var source_height := 0
 var source_focal := 1.0
+# A lens wider than MAX_SOURCE_ANGLE_RAD is drawn as cube faces (lens.py cube_faces).
+var cube := false
+var cube_face_names: Array[String] = []
+var cube_size := 0
+var cube_focal := 1.0
+
+# Each face's frame (x_f, y_f, z_f) in the camera's optical frame (lens.py CUBE_FACES).
+const CUBE_FACES := {
+	"front": [Vector3(1, 0, 0), Vector3(0, 1, 0), Vector3(0, 0, 1)],
+	"right": [Vector3(0, 0, -1), Vector3(0, 1, 0), Vector3(1, 0, 0)],
+	"left": [Vector3(0, 0, 1), Vector3(0, 1, 0), Vector3(-1, 0, 0)],
+	"up": [Vector3(1, 0, 0), Vector3(0, 0, 1), Vector3(0, -1, 0)],
+	"down": [Vector3(1, 0, 0), Vector3(0, 0, -1), Vector3(0, 1, 0)],
+	"back": [Vector3(-1, 0, 0), Vector3(0, 1, 0), Vector3(0, 0, -1)],
+}
+const CUBE_MARGIN_PX := 2
 
 # From a parsed profile (spec). Sets error (and returns false) for an unsupported lens.
 func load_spec(spec: Dictionary) -> bool:
@@ -148,11 +164,16 @@ func _theta_of_radius(rho: float) -> float:
 		return -1.0
 	return theta
 
-# The ideal pinhole image covering every ray of the output image (lens.py source_camera).
-func compute_source(grid_step := 8) -> bool:
-	source_focal = maxf(fx, fy)
-	var max_tx := 0.0
-	var max_ty := 0.0
+# The images to draw: one wider pinhole, or cube faces when the lens sees further
+# than MAX_SOURCE_ANGLE_RAD off axis.
+func compute_views() -> bool:
+	if compute_source():
+		return true
+	error = ""
+	compute_cube()
+	return true
+
+func _sample_points(grid_step: int) -> Array[Vector2i]:
 	var points: Array[Vector2i] = []
 	for u in width:
 		points.append(Vector2i(u, 0))
@@ -167,7 +188,47 @@ func compute_source(grid_step := 8) -> bool:
 	for u in us:
 		for v in vs:
 			points.append(Vector2i(u, v))
-	for p in points:
+	return points
+
+static func face_of(ray: Vector3) -> String:
+	var a := ray.abs()
+	if a.z >= a.x and a.z >= a.y:
+		return "front" if ray.z > 0.0 else "back"
+	if a.x >= a.y:
+		return "right" if ray.x > 0.0 else "left"
+	return "down" if ray.y > 0.0 else "up"
+
+# The faces the lens needs (lens.py cube_faces).
+func compute_cube(grid_step := 8) -> void:
+	var needed := {}
+	for p in _sample_points(grid_step):
+		var ray := pixel_to_ray(p.x, p.y)
+		if ray != Vector3.ZERO:
+			needed[face_of(ray)] = true
+	cube = true
+	cube_face_names.clear()
+	for name in CUBE_FACES:
+		if needed.has(name):
+			cube_face_names.append(name)
+	cube_focal = maxf(fx, fy)
+	cube_size = 2 * (ceili(cube_focal) + CUBE_MARGIN_PX)
+
+func cube_fov() -> float:
+	return 2.0 * atan(cube_size / 2.0 / cube_focal)
+
+# Godot basis of a face camera relative to the main camera: Godot's camera axes are
+# optical x, -y and -z, so each optical vector v maps to (v.x, -v.y, -v.z).
+static func face_basis(name: String) -> Basis:
+	var f: Array = CUBE_FACES[name]
+	var to_godot := func(v: Vector3) -> Vector3: return Vector3(v.x, -v.y, -v.z)
+	return Basis(to_godot.call(f[0]), to_godot.call(-f[1]), to_godot.call(-f[2]))
+
+# The ideal pinhole image covering every ray of the output image (lens.py source_camera).
+func compute_source(grid_step := 8) -> bool:
+	source_focal = maxf(fx, fy)
+	var max_tx := 0.0
+	var max_ty := 0.0
+	for p in _sample_points(grid_step):
 		var ray := pixel_to_ray(p.x, p.y)
 		if ray == Vector3.ZERO:
 			continue
@@ -185,8 +246,16 @@ func compute_source(grid_step := 8) -> bool:
 func source_horizontal_fov() -> float:
 	return 2.0 * atan(source_width / 2.0 / source_focal)
 
-func set_shader_parameters(material: ShaderMaterial, source_texture: Texture2D) -> void:
-	material.set_shader_parameter("source_image", source_texture)
+# source_textures: the one source image, or the cube face images by face name.
+func set_shader_parameters(material: ShaderMaterial, source_textures: Dictionary) -> void:
+	material.set_shader_parameter("cube", cube)
+	if cube:
+		for name in CUBE_FACES:
+			material.set_shader_parameter("face_" + name, source_textures.get(name))
+		material.set_shader_parameter("face", Vector2(cube_focal, (cube_size - 1) / 2.0))
+		material.set_shader_parameter("face_size", float(cube_size))
+	else:
+		material.set_shader_parameter("source_image", source_textures["source"])
 	material.set_shader_parameter("output_size", Vector2(width, height))
 	material.set_shader_parameter("intrinsics", Vector4(fx, fy, cx, cy))
 	material.set_shader_parameter("skew", skew)

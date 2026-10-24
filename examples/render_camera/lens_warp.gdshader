@@ -17,6 +17,16 @@ uniform vec4 kb;          // k0..k3
 uniform float cutoff_angle;
 uniform vec3 source;      // focal, cx, cy (pixels)
 uniform vec2 source_size;
+// Wide lenses: cube faces instead of one source (lens.py cube_faces, cube_position).
+uniform bool cube;
+uniform sampler2D face_front : filter_linear, repeat_disable;
+uniform sampler2D face_right : filter_linear, repeat_disable;
+uniform sampler2D face_left : filter_linear, repeat_disable;
+uniform sampler2D face_up : filter_linear, repeat_disable;
+uniform sampler2D face_down : filter_linear, repeat_disable;
+uniform sampler2D face_back : filter_linear, repeat_disable;
+uniform vec2 face;        // focal, centre (pixels)
+uniform float face_size;
 
 const int ITERATIONS = 20;
 const float RESIDUAL_LIMIT = 1e-4;  // float32: looser than lens.py's 1e-6
@@ -84,10 +94,36 @@ vec3 pixel_to_ray(vec2 pixel) {
 	return ray;
 }
 
+// The ray in the face it falls on (lens.py CUBE_FACES): face-local optical x, y, z.
+vec3 cube_sample(vec3 ray) {
+	vec3 a = abs(ray);
+	vec3 local;
+	int id;
+	if (a.z >= a.x && a.z >= a.y) {
+		id = ray.z > 0.0 ? 0 : 5;
+		local = ray.z > 0.0 ? ray : vec3(-ray.x, ray.y, -ray.z);
+	} else if (a.x >= a.y) {
+		id = ray.x > 0.0 ? 1 : 2;
+		local = ray.x > 0.0 ? vec3(-ray.z, ray.y, ray.x) : vec3(ray.z, ray.y, -ray.x);
+	} else {
+		id = ray.y > 0.0 ? 4 : 3;
+		local = ray.y > 0.0 ? vec3(ray.x, -ray.z, ray.y) : vec3(ray.x, ray.z, -ray.y);
+	}
+	vec2 uv = (face.x * local.xy / local.z + face.y + 0.5) / face_size;
+	if (id == 0) return texture(face_front, uv).rgb;
+	if (id == 1) return texture(face_right, uv).rgb;
+	if (id == 2) return texture(face_left, uv).rgb;
+	if (id == 3) return texture(face_up, uv).rgb;
+	if (id == 4) return texture(face_down, uv).rgb;
+	return texture(face_back, uv).rgb;
+}
+
 void fragment() {
 	vec2 pixel = UV * output_size - 0.5;
 	vec3 ray = pixel_to_ray(pixel);
-	if (ray.z <= 0.0) {
+	if (cube) {
+		COLOR = vec4(dot(ray, ray) > 0.0 ? cube_sample(ray) : vec3(0.0), 1.0);
+	} else if (ray.z <= 0.0) {
 		COLOR = vec4(0.0, 0.0, 0.0, 1.0);
 	} else {
 		vec2 s = source.x * ray.xy / ray.z + source.yz;

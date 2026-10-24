@@ -42,6 +42,9 @@ var _viewport: SubViewport
 # wider ideal pinhole image and _warp_viewport maps it to the lens's image.
 var _warp_viewport: SubViewport
 var _warp_material: ShaderMaterial
+# Wide lenses: one viewport and camera per cube face, by face name (lens.gd CUBE_FACES).
+# They share the world (SubViewports use the root's World3D) and the camera attributes.
+var _face_views := {}
 var _camera: Camera3D
 var _rotor: MeshInstance3D
 var _world_glb := ""
@@ -236,22 +239,29 @@ func _handle_frame_request(registry: Node, body: Dictionary) -> void:
 		var size := Vector2i(profile["width"], profile["height"])
 		var lens = profile["lens"]
 		var warp: bool = not lens.is_ideal()
-		var fov: float = lens.source_horizontal_fov() if warp else profile["horizontal_fov"]
-		_resize_viewport(Vector2i(lens.source_width, lens.source_height) if warp else size)
+		var fov: float = profile["horizontal_fov"]
+		if warp:
+			fov = lens.cube_fov() if lens.cube else lens.source_horizontal_fov()
+		if not lens.cube:
+			_resize_viewport(Vector2i(lens.source_width, lens.source_height) if warp else size)
 		_camera.keep_aspect = Camera3D.KEEP_WIDTH
 		Lighting.apply_lens(_camera_attributes, fov, profile["near"], profile["far"])
 		_lighting.apply_exposure(_camera_attributes, profile["exposure"])
 		_lighting.apply_color(profile["photometric"], fov)
+		_apply_ros_enu_pose(body["camera_pose"])
 		if warp:
 			if _warp_viewport.size != size:
 				_warp_viewport.size = size
-			lens.set_shader_parameters(_warp_material, _viewport.get_texture())
+			var textures := {"source": _viewport.get_texture()}
+			if lens.cube:
+				textures = _draw_cube_faces(lens)
+			lens.set_shader_parameters(_warp_material, textures)
 			_warp_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
-		_apply_ros_enu_pose(body["camera_pose"])
 		if _light_step.size() == 2 and not _light_step_done and sim_time_usec >= int(_light_step[0] * 1000000.0):
 			_lighting.scale_light(_light_step[1])
 			_light_step_done = true
-		_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+		if not (warp and lens.cube):
+			_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 		RenderingServer.force_draw(false, _frame_step_sec(camera_name, sim_time_usec))
 	var readback_start := Time.get_ticks_usec()
 	if outputs & 1:
@@ -352,12 +362,47 @@ func _load_profile(path: String) -> void:
 	if not lens.load_spec(root["spec"]):
 		_profile_error(path, "/spec/lens", lens.error)
 		return
-	if not lens.is_ideal() and not lens.compute_source():
+	if not lens.is_ideal() and not lens.compute_views():
 		_profile_error(path, "/spec/lens", lens.error)
 		return
 	_profiles[values[0]] = {"width": values[1], "height": values[2], "format": values[3],
 		"horizontal_fov": float(values[4]), "near": float(values[5]), "far": float(values[6]),
 		"exposure": exposure, "photometric": photometric, "lens": lens}
+
+# Point the face cameras along the cube faces of the main camera's pose and mark their
+# viewports for this draw. Returns the face textures by name.
+func _draw_cube_faces(lens) -> Dictionary:
+	var textures := {}
+	for name in lens.cube_face_names:
+		var view: Dictionary = _face_view(name)
+		var viewport: SubViewport = view["viewport"]
+		var camera: Camera3D = view["camera"]
+		if viewport.size != Vector2i(lens.cube_size, lens.cube_size):
+			viewport.size = Vector2i(lens.cube_size, lens.cube_size)
+		camera.transform = _camera.transform * Transform3D(Lens.face_basis(name), Vector3.ZERO)
+		camera.force_update_transform()
+		viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+		textures[name] = viewport.get_texture()
+	return textures
+
+func _face_view(name: String) -> Dictionary:
+	if _face_views.has(name):
+		return _face_views[name]
+	var viewport := SubViewport.new()
+	viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	viewport.msaa_3d = Viewport.MSAA_DISABLED
+	viewport.use_taa = false
+	var camera := Camera3D.new()
+	camera.attributes = _camera_attributes
+	camera.keep_aspect = Camera3D.KEEP_WIDTH
+	_lighting.attach_to(camera)
+	viewport.add_child(camera)
+	add_child(viewport)
+	# Faces draw before the warp viewport that reads them.
+	move_child(viewport, _warp_viewport.get_index())
+	camera.current = true
+	_face_views[name] = {"viewport": viewport, "camera": camera}
+	return _face_views[name]
 
 func _print_probe(image: Image, sim_time_usec: int) -> void:
 	var sum := Vector3.ZERO
