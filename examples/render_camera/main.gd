@@ -488,7 +488,7 @@ func _build_world() -> bool:
 	var world := Node3D.new()
 	_viewport.add_child(world)
 	_lighting.add_to(world)
-	if _test_chart.size() == 4:
+	if _test_chart.size() >= 4:
 		Lighting.add_test_chart(world, _test_chart)
 	if _test_board.size() == 9:
 		Lighting.add_test_board(world, _test_board)

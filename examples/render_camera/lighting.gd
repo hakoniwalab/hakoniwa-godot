@@ -34,9 +34,13 @@ var sun: DirectionalLight3D
 # Auto exposure speed (CameraAttributes.auto_exposure_speed) when the profile has no
 # exposure.adaptation_speed; --auto-exposure-speed= changes it for tests.
 var auto_exposure_speed := 0.5
+# Weather (C5, hakoniwa-scenario memo 027), OpenSCENARIO Weather names: a JSON file
+# given with --weather=. Fog: fog.visualRange (m).
+var weather := {}
 var environment: Environment
 var white_balance = preload("res://white_balance.gd").new()
 var lens_effects = preload("res://lens_effects.gd").new()
+var fog_effect = preload("res://fog_effect.gd").new()
 var sun_elevation_deg := 0.0
 var sun_azimuth_deg := 0.0
 
@@ -53,6 +57,13 @@ func parse_option(arg: String) -> bool:
 		sky_intensity = arg.trim_prefix("--sky-intensity=").to_float()
 	elif arg.begins_with("--latitude="):
 		latitude = arg.trim_prefix("--latitude=").to_float()
+	elif arg.begins_with("--weather="):
+		var text := FileAccess.get_file_as_string(arg.trim_prefix("--weather="))
+		var parsed = JSON.parse_string(text)
+		if typeof(parsed) != TYPE_DICTIONARY:
+			push_error("weather file is not a JSON object: " + arg)
+		else:
+			weather = parsed
 	elif arg.begins_with("--auto-exposure-speed="):
 		auto_exposure_speed = arg.trim_prefix("--auto-exposure-speed=").to_float()
 	elif arg.begins_with("--longitude="):
@@ -88,11 +99,37 @@ func add_to(world: Node3D) -> void:
 	environment.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	# Linear until a profile asks for a tone map (apply_color).
 	environment.tonemap_mode = Environment.TONE_MAPPER_LINEAR
+	_apply_fog()
 	var world_environment := WorldEnvironment.new()
 	world_environment.environment = environment
 	world.add_child(world_environment)
 	print("LIGHT time=%s sun_elevation_deg=%.2f sun_azimuth_deg=%.2f sun_lux=%.0f sun_kelvin=%.0f sky_intensity=%.0f" % [
 		time_text, sun_elevation_deg, sun_azimuth_deg, sun_lux, sun_kelvin, sky_intensity])
+
+# Fog from the meteorological visibility (OpenSCENARIO Fog visualRange, the WMO
+# meteorological optical range): contrast falls to 5 % at that distance, so the
+# extinction coefficient is beta = -ln(0.05) / V (about 3 / V). fog_effect.gd applies
+# Koschmieder's law on linear values. RGB only: depth and segmentation stay.
+const FOG_CONTRAST_THRESHOLD := 0.05
+# The airlight: fog lit by the day's light, scattering it as a white diffuser,
+# L = E_h / pi with E_h the horizontal illuminance: the direct sun (lux x sin elevation)
+# plus the sky, taken as DIFFUSE_FRACTION of it (a clear day; an approximation, memo 027).
+const DIFFUSE_FRACTION := 0.15
+var fog_airlight_nits := 0.0
+
+func _apply_fog() -> void:
+	# Godot's own fog stays off (fog_effect.gd composes the fog on linear values).
+	environment.fog_enabled = false
+	var fog: Dictionary = weather.get("fog", {})
+	if not fog.has("visualRange"):
+		fog_effect.beta = 0.0
+		return
+	var visual_range := float(fog["visualRange"])
+	var horizontal_lux := sun_lux * maxf(0.0, sin(deg_to_rad(sun_elevation_deg))) * (1.0 + DIFFUSE_FRACTION)
+	fog_airlight_nits = horizontal_lux / PI
+	fog_effect.beta = -log(FOG_CONTRAST_THRESHOLD) / visual_range
+	fog_effect.airlight_nits = fog_airlight_nits
+	print("WEATHER fog visualRange=%.1f m beta=%.6f /m airlight=%.0f nits" % [visual_range, fog_effect.beta, fog_airlight_nits])
 
 # The sun's colour on the daylight locus (color_temperature.gd), the same white the
 # camera's white balance uses. Godot multiplies light_color by its own (Planckian)
@@ -139,6 +176,7 @@ func apply_exposure(attributes: CameraAttributesPhysical, exposure: Dictionary) 
 	var normalization := multiplier / (1.2 * pow(2.0, _ev100(iso, f_number, shutter_s)))
 	var reference := 1.0 / (1.2 * pow(2.0, _ev100(SUNNY16_ISO, SUNNY16_F_NUMBER, SUNNY16_SHUTTER_S)))
 	sky_material.set_shader_parameter("sun_energy_scale", reference / normalization)
+	fog_effect.exposure_normalization = normalization
 	# The schema's default mode is auto, but only when the profile has an exposure block.
 	attributes.auto_exposure_enabled = not exposure.is_empty() and String(exposure.get("mode", "auto")) == "auto"
 	attributes.auto_exposure_speed = float(exposure.get("adaptation_speed", auto_exposure_speed))
@@ -177,7 +215,9 @@ var _gamma_tables := {}
 func attach_to(camera: Camera3D) -> void:
 	var compositor := Compositor.new()
 	# Lens effects first (they happen in the lens), then white balance (the sensor).
-	compositor.compositor_effects = [lens_effects, white_balance]
+	# The atmosphere (fog), then the lens, then the sensor (white balance): the order light
+	# meets them.
+	compositor.compositor_effects = [fog_effect, lens_effects, white_balance]
 	camera.compositor = compositor
 
 func apply_color(photometric: Dictionary) -> void:
@@ -239,8 +279,10 @@ const CHART_PATCHES := [
 ]
 const PATCH_SIZE := 0.5
 
+# An optional 5th value scales the chart (to keep its apparent size at a distance).
 static func add_test_chart(world: Node3D, ros_pose: PackedFloat64Array) -> void:
 	var chart := Node3D.new()
+	var scale_factor := ros_pose[4] if ros_pose.size() > 4 else 1.0
 	chart.name = "TestChart"
 	# ROS (x, y, z) -> Godot (-y, z, -x); ROS yaw (from North, counter-clockwise) -> rotation about Godot Y.
 	chart.position = Vector3(-ros_pose[1], ros_pose[2], -ros_pose[0])
@@ -250,7 +292,7 @@ static func add_test_chart(world: Node3D, ros_pose: PackedFloat64Array) -> void:
 	for i in CHART_PATCHES.size():
 		var patch := MeshInstance3D.new()
 		var quad := QuadMesh.new()
-		quad.size = Vector2(PATCH_SIZE, PATCH_SIZE)
+		quad.size = Vector2(PATCH_SIZE, PATCH_SIZE) * scale_factor
 		patch.mesh = quad
 		var material := StandardMaterial3D.new()
 		material.albedo_color = (CHART_PATCHES[i][1] as Color).linear_to_srgb()
@@ -258,7 +300,7 @@ static func add_test_chart(world: Node3D, ros_pose: PackedFloat64Array) -> void:
 		material.metallic = 0.0
 		material.metallic_specular = 0.0
 		patch.material_override = material
-		patch.position = Vector3((i % 3 - 1) * PATCH_SIZE, (1 - i / 3) * PATCH_SIZE, 0)
+		patch.position = Vector3((i % 3 - 1) * PATCH_SIZE * scale_factor, (1 - i / 3) * PATCH_SIZE * scale_factor, 0)
 		patch.name = CHART_PATCHES[i][0]
 		chart.add_child(patch)
 
