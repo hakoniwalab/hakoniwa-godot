@@ -229,7 +229,7 @@ func _handle_frame_request(registry: Node, body: Dictionary) -> void:
 		_camera.keep_aspect = Camera3D.KEEP_WIDTH
 		Lighting.apply_lens(_camera_attributes, profile["horizontal_fov"], profile["near"], profile["far"])
 		_lighting.apply_exposure(_camera_attributes, profile["exposure"])
-		_lighting.apply_color(profile["photometric"])
+		_lighting.apply_color(profile["photometric"], profile["horizontal_fov"])
 		_apply_ros_enu_pose(body["camera_pose"])
 		if _light_step.size() == 2 and not _light_step_done and sim_time_usec >= int(_light_step[0] * 1000000.0):
 			_lighting.scale_light(_light_step[1])

@@ -36,6 +36,7 @@ var sun: DirectionalLight3D
 var auto_exposure_speed := 0.5
 var environment: Environment
 var white_balance = preload("res://white_balance.gd").new()
+var lens_effects = preload("res://lens_effects.gd").new()
 var sun_elevation_deg := 0.0
 var sun_azimuth_deg := 0.0
 
@@ -175,10 +176,19 @@ var _gamma_tables := {}
 
 func attach_to(camera: Camera3D) -> void:
 	var compositor := Compositor.new()
-	compositor.compositor_effects = [white_balance]
+	# Lens effects first (they happen in the lens), then white balance (the sensor).
+	compositor.compositor_effects = [lens_effects, white_balance]
 	camera.compositor = compositor
 
-func apply_color(photometric: Dictionary) -> void:
+func apply_color(photometric: Dictionary, horizontal_fov_rad: float) -> void:
+	var effects: Dictionary = photometric.get("effects", {})
+	lens_effects.set_effects(effects, horizontal_fov_rad)
+	# Bloom: Godot's glow on scene values above 1, added before the tone map
+	# (additive blend; the default soft light blends after the tone map).
+	var bloom := float(effects.get("bloom", 0.0))
+	environment.glow_enabled = bloom > 0.0
+	environment.glow_intensity = bloom
+	environment.glow_blend_mode = Environment.GLOW_BLEND_MODE_ADDITIVE
 	environment.tonemap_mode = TONE_MAPS.get(String(photometric.get("tone_map", "linear")), Environment.TONE_MAPPER_LINEAR)
 	environment.tonemap_white = TONE_MAP_WHITE
 	var balance: Dictionary = photometric.get("white_balance", {})
