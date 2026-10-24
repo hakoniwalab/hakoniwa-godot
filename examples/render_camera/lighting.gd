@@ -36,7 +36,8 @@ var sun: DirectionalLight3D
 # exposure.adaptation_speed; --auto-exposure-speed= changes it for tests.
 var auto_exposure_speed := 2.0
 # Weather (C5, hakoniwa-scenario memo 027), OpenSCENARIO Weather names: a JSON file
-# given with --weather=. Fog: fog.visualRange (m).
+# given with --weather=. Fog: fog.visualRange (m); rain: precipitation.precipitationType and
+# precipitationIntensity (mm/h).
 var weather := {}
 var environment: Environment
 var white_balance = preload("res://white_balance.gd").new()
@@ -149,15 +150,33 @@ func _apply_fog() -> void:
 	# Godot's own fog stays off (fog_effect.gd composes the fog on linear values).
 	environment.fog_enabled = false
 	var fog: Dictionary = weather.get("fog", {})
-	if not fog.has("visualRange"):
-		fog_effect.beta = 0.0
+	var fog_beta := -log(FOG_CONTRAST_THRESHOLD) / float(fog["visualRange"]) if fog.has("visualRange") else 0.0
+	var rain_beta := rain_extinction(rain_rate())
+	fog_effect.beta = fog_beta + rain_beta
+	if fog_effect.beta <= 0.0:
 		return
-	var visual_range := float(fog["visualRange"])
 	var horizontal_lux := sun_lux * maxf(0.0, sin(deg_to_rad(sun_elevation_deg))) + float(clear_sky["diffuse_horizontal_lux"])
 	fog_airlight_nits = horizontal_lux / PI
-	fog_effect.beta = -log(FOG_CONTRAST_THRESHOLD) / visual_range
 	fog_effect.airlight_nits = fog_airlight_nits
-	print("WEATHER fog visualRange=%.1f m beta=%.6f /m airlight=%.0f nits" % [visual_range, fog_effect.beta, fog_airlight_nits])
+	print("WEATHER fog_beta=%.6f /m rain_rate=%.1f mm/h rain_beta=%.6f /m visual_range=%.1f m airlight=%.0f nits" % [
+		fog_beta, rain_rate(), rain_beta, -log(FOG_CONTRAST_THRESHOLD) / fog_effect.beta, fog_airlight_nits])
+
+# Rain (a copy of hakoniwa-scenario hakoniwa_scenario/environment/rain.py, memo 027):
+# OpenSCENARIO precipitation.precipitationIntensity (mm/h) when precipitationType is rain.
+func rain_rate() -> float:
+	var precipitation: Dictionary = weather.get("precipitation", {})
+	if String(precipitation.get("precipitationType", "rain")) != "rain":
+		return 0.0
+	return float(precipitation.get("precipitationIntensity", 0.0))
+
+# Extinction of rain in 1/m: Marshall-Palmer drops (N0 8000 m^-3 mm^-1, Lambda 4.1 R^-0.21
+# mm^-1), each removing twice its cross-section: pi N0 / Lambda^3.
+static func rain_extinction(rain_rate_mm_h: float) -> float:
+	if rain_rate_mm_h <= 0.0:
+		return 0.0
+	var n0 := 8000.0 * 1e3
+	var lam := 4.1 * pow(rain_rate_mm_h, -0.21) * 1e3
+	return 2.0 * PI / 4.0 * 2.0 * n0 / pow(lam, 3)
 
 # The sun's colour on the daylight locus (color_temperature.gd), the same white the
 # camera's white balance uses. Godot multiplies light_color by its own (Planckian)

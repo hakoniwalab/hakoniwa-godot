@@ -2,9 +2,11 @@ extends Node
 
 # HakoCamera/RenderCamera server in Godot: a registered polling asset with a 1 ms
 # physics tick. Godot does not render on its own (render loop off); a request is
-# rendered inside the simulation step that receives it (RenderingServer.force_draw),
-# read back and answered before the next step, so the simulation time does not move
-# while rendering.
+# rendered when it is received (RenderingServer.force_draw), read back and answered
+# before the next step, so the simulation time does not move while rendering.
+# Requests are polled every frame, not only on simulation steps: a client may hold the
+# world time while it waits for the reply (the camera rig does), and Godot, already a
+# step ahead of it, then gets no step until the reply is sent.
 # Run with a window (rendering needs the GPU), not --headless:
 #   Godot --fixed-fps 1000 --path examples/render_camera -- --service-json=<service.json>
 # camera_name of the request is "<width>x<height>". The first byte of the image is
@@ -168,6 +170,16 @@ func on_simulation_reset() -> void:
 func _on_simulation_step(simtime_usec: int, _world_time_usec: int) -> void:
 	if simtime_usec % 1000000 == 0:
 		print("RTF_SAMPLE sim_usec=%d wall_usec=%d" % [simtime_usec, Time.get_ticks_usec()])
+
+func _process(_delta: float) -> void:
+	if _sim == null or _server == null:
+		return
+	var state: int = _sim.get_sync_state()
+	if state == SimNodeScript.SYNC_STATE_RUNNING or state == SimNodeScript.SYNC_STATE_BLOCKED_BY_WORLD_TIME:
+		_serve_request()
+
+# Answer a pending response or render the next request, if any.
+func _serve_request() -> void:
 	if not _pending_response.is_empty():
 		_put_response(_pending_response)
 		return
@@ -188,7 +200,7 @@ func _on_simulation_step(simtime_usec: int, _world_time_usec: int) -> void:
 	var image: Image = null
 	if size.x > 0 and size.y > 0:
 		_resize_viewport(size)
-		_rotor.rotation.y = fmod(float(simtime_usec) * 0.000001, TAU)
+		_rotor.rotation.y = fmod(float(seq) * 0.000001, TAU)
 		_apply_ros_enu_pose(_camera_pose_override if not _camera_pose_override.is_empty() else body["camera_pose"])
 		_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 		RenderingServer.force_draw(false)
