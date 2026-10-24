@@ -3,8 +3,13 @@ extends SceneTree
 const ColorTemperature = preload("res://color_temperature.gd")
 const WhiteBalance = preload("res://white_balance.gd")
 const Lighting = preload("res://lighting.gd")
+const SunModel = preload("res://sun_model.gd")
+const SkyModel = preload("res://sky_model.gd")
+const AutoExposure = preload("res://auto_exposure.gd")
 
 var failures := 0
+var checks := 0
+var max_reference_relative_difference := 0.0
 
 
 func _init() -> void:
@@ -13,12 +18,16 @@ func _init() -> void:
 	test_exposure_value()
 	test_sun_position()
 	test_parse_time()
+	test_reference_vectors()
 	if failures == 0:
+		print("PHOTOMETRIC_CHECKS=%d" % checks)
+		print("PHOTOMETRIC_MAX_REL_DIFF=" + String.num_scientific(max_reference_relative_difference))
 		print("PHOTOMETRIC_TEST_OK")
 	quit(failures)
 
 
 func check(condition: bool, message: String) -> void:
+	checks += 1
 	if not condition:
 		failures += 1
 		push_error(message)
@@ -27,6 +36,12 @@ func check(condition: bool, message: String) -> void:
 func check_near(actual: float, expected: float, tolerance: float, message: String) -> void:
 	check(absf(actual - expected) <= tolerance,
 		"%s: got %.9f, expected %.9f +/- %.9f" % [message, actual, expected, tolerance])
+
+
+func check_relative(actual: float, expected: float, tolerance: float, message: String) -> void:
+	var scale := maxf(absf(expected), 1e-12)
+	max_reference_relative_difference = maxf(max_reference_relative_difference, absf(actual - expected) / scale)
+	check_near(actual, expected, tolerance * scale, message)
 
 
 func check_vector_near(actual: Vector3, expected: Vector3, tolerance: float, message: String) -> void:
@@ -124,3 +139,39 @@ func check_parsed_time(text: String, expected_day: int, expected_hour: float, me
 	check(parsed["day_of_year"] == expected_day,
 		"%s day: got %s, expected %d" % [message, parsed["day_of_year"], expected_day])
 	check_near(parsed["hours_utc"], expected_hour, 0.000001, message + " hour")
+
+
+func test_reference_vectors() -> void:
+	var file := FileAccess.open("res://tests/photometric_vectors.json", FileAccess.READ)
+	check(file != null, "open photometric_vectors.json")
+	if file == null:
+		return
+	var vectors = JSON.parse_string(file.get_as_text())
+	check(vectors is Dictionary, "parse photometric_vectors.json")
+	if not vectors is Dictionary:
+		return
+	for case in vectors["sun"]:
+		var actual: Dictionary = SunModel.direct_sun(case["elevation"])
+		check_relative(actual["illuminance"], case["illuminance"], 1e-6, "sun illuminance %.2f" % case["elevation"])
+		check_relative(actual["xy"].x, case["xy"][0], 1e-6, "sun x %.2f" % case["elevation"])
+		check_relative(actual["xy"].y, case["xy"][1], 1e-6, "sun y %.2f" % case["elevation"])
+	for case in vectors["clear_sky"]:
+		var actual: Dictionary = SkyModel.clear_sky(case["elevation"], case["direct_normal_lux"])
+		for key in ["turbidity", "zenith_luminance", "diffuse_horizontal_lux", "ground_luminance"]:
+			check_relative(actual[key], case[key], 1e-6, "clear sky %s %.2f" % [key, case["elevation"]])
+	for case in vectors["relative_luminance"]:
+		var actual := SkyModel.relative_luminance(case["zenith"], case["azimuth"], case["sun_zenith"], case["sun_azimuth"])
+		check_relative(actual, case["expected"], 1e-6, "relative luminance")
+	for case in vectors["chromaticity"]:
+		var actual := SkyModel.chromaticity(case["view_zenith"], case["cos_scatter"], case["elevation"])
+		check_relative(actual.x, case["xy"][0], 1e-6, "sky chromaticity x")
+		check_relative(actual.y, case["xy"][1], 1e-6, "sky chromaticity y")
+	for case in vectors["metered_log2"]:
+		var counts := PackedInt32Array(case["counts"])
+		check_relative(AutoExposure.metered_log2(counts, case["low"], case["high"]), case["expected"], 1e-6, "metered log2")
+	for case in vectors["target_ev100"]:
+		var actual := AutoExposure.target_ev100(case["metered"], case["compensation"], case["low"], case["high"])
+		check_relative(actual, case["expected"], 1e-6, "target EV100")
+	for case in vectors["adapt"]:
+		var actual := AutoExposure.adapt(case["current"], case["target"], case["speed"], case["dt"])
+		check_relative(actual, case["expected"], 1e-6, "exposure adaptation")

@@ -16,11 +16,12 @@ extends Node
 #   --world-glb=<path>          draw this glTF world (loaded at run time) instead of the boxes
 #   --camera-pose=x,y,z,yaw_deg use this camera pose (ROS world frame, m and deg) instead of the request's
 #   --save-frame-dir=<dir>      save the 10th rendered frame of each size as PNG
-#   --test-chart=x,y,z,yaw_deg  place a reflectance test chart (ROS world frame, m and deg)
+#   --test-chart=x,y,z,yaw_deg[,scale[,tilt_deg]]  place a reflectance test chart (ROS world frame, m and deg)
 #   --test-board=x,y,z,yaw,pitch,roll,cols,rows,square_m  place a calibration checkerboard
-#   --sun-time=, --sun-lux=, --sun-kelvin=, --sky-intensity=, --latitude=, --longitude=,
+#   --sun-time=, --sun-lux=, --sun-kelvin=, --latitude=, --longitude=,
 #   --auto-exposure-speed=      daylight in physical units, auto exposure speed (lighting.gd)
 #   --light-step=sim_sec,factor scale all daylight by factor from this simulation time
+#   --sky-test-uniform=nits     a sky and ground of one luminance (a test of the ambient light)
 #   --probe=x,y                 print the mean 8-bit RGB of 9 x 9 pixels at (x, y) every frame
 #                               daylight in physical units (lighting.gd)
 

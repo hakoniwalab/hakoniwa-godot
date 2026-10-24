@@ -2,6 +2,7 @@ extends RefCounted
 
 const ColorTemperature = preload("res://color_temperature.gd")
 const SunModel = preload("res://sun_model.gd")
+const SkyModel = preload("res://sky_model.gd")
 
 # Daylight in physical units (C3, hakoniwa-scenario memo 024): the sun in lux, the sky
 # in nits, ambient and reflections from the sky, and a camera with physical exposure
@@ -16,10 +17,6 @@ const DEFAULT_LONGITUDE := 139.690808
 const DEFAULT_TIME := "2026-10-24T12:00:00+09:00"
 const DEFAULT_SUN_LUX := 100000.0       # direct sun, clear day
 const DEFAULT_SUN_KELVIN := 5800.0
-# Environment.background_intensity for the physical sky. It scales the sky shader's
-# output, so it is not the sky luminance itself: Godot's default (30000) gives about
-# 3,000-5,000 nits away from the sun at noon (measured; memo 024).
-const DEFAULT_SKY_INTENSITY := 30000.0
 # Godot sizes the image sensor so that fov = 2 atan(12 mm / focal length) (a 24 mm frame);
 # with KEEP_WIDTH that angle is the horizontal one.
 const HALF_SENSOR_MM := 12.0
@@ -29,10 +26,9 @@ var longitude := DEFAULT_LONGITUDE
 var time_text := DEFAULT_TIME
 var sun_lux := DEFAULT_SUN_LUX
 var sun_kelvin := DEFAULT_SUN_KELVIN
-var sky_intensity := DEFAULT_SKY_INTENSITY
 var sky_material: ShaderMaterial
 # The sun as seen: angular diameter 0.53 deg; its luminance is the sun's illuminance
-# (normal to the sun) over the disk's solid angle (physical_sky.gdshader, memo 027).
+# (normal to the sun) over the disk's solid angle (cie_sky.gdshader, memo 027).
 const SUN_ANGULAR_DIAMETER := deg_to_rad(0.53)
 var current_sun_lux := DEFAULT_SUN_LUX
 var sun: DirectionalLight3D
@@ -55,9 +51,15 @@ var sun_rgb := Vector3.ONE
 var _sun_lux_given := false
 var _sun_kelvin_given := false
 var sun_azimuth_deg := 0.0
+# The clear sky for the sun (sky_model.gd): luminous turbidity, zenith luminance (cd/m2),
+# sky horizontal illuminance (lx), ground luminance (cd/m2).
+var clear_sky := {}
+# A test of the ambient light: a sky and ground of one luminance (cd/m2) everywhere
+# (--sky-test-uniform=); 0 for the clear sky.
+var sky_test_uniform_nits := 0.0
 
 # Options (after --): --sun-time=ISO8601 with offset, --sun-lux=, --sun-kelvin=,
-# --sky-intensity=, --latitude=, --longitude=. Returns false for an option it does not know.
+# --latitude=, --longitude=. Returns false for an option it does not know.
 func parse_option(arg: String) -> bool:
 	if arg.begins_with("--sun-time="):
 		time_text = arg.trim_prefix("--sun-time=")
@@ -67,8 +69,6 @@ func parse_option(arg: String) -> bool:
 	elif arg.begins_with("--sun-kelvin="):
 		sun_kelvin = arg.trim_prefix("--sun-kelvin=").to_float()
 		_sun_kelvin_given = true
-	elif arg.begins_with("--sky-intensity="):
-		sky_intensity = arg.trim_prefix("--sky-intensity=").to_float()
 	elif arg.begins_with("--latitude="):
 		latitude = arg.trim_prefix("--latitude=").to_float()
 	elif arg.begins_with("--weather="):
@@ -78,6 +78,8 @@ func parse_option(arg: String) -> bool:
 			push_error("weather file is not a JSON object: " + arg)
 		else:
 			weather = parsed
+	elif arg.begins_with("--sky-test-uniform="):
+		sky_test_uniform_nits = arg.trim_prefix("--sky-test-uniform=").to_float()
 	elif arg.begins_with("--auto-exposure-speed="):
 		auto_exposure_speed = arg.trim_prefix("--auto-exposure-speed=").to_float()
 	elif arg.begins_with("--longitude="):
@@ -89,28 +91,38 @@ func parse_option(arg: String) -> bool:
 func add_to(world: Node3D) -> void:
 	sun = DirectionalLight3D.new()
 	sun.name = "Sun"
-	_set_sun_colour(sun)
-	current_sun_lux = sun_lux
 	sun.shadow_enabled = true
 	sun.sky_mode = DirectionalLight3D.SKY_MODE_LIGHT_AND_SKY
 	var position := _sun_position()
 	sun_elevation_deg = position.x
 	sun_azimuth_deg = position.y
+	# The sun's illuminance and colour come from its elevation (or the weather), so the
+	# light is set after them.
 	_apply_sun_weather()
+	_set_sun_colour(sun)
+	current_sun_lux = sun_lux
 	var toward_sun := _direction(sun_azimuth_deg, sun_elevation_deg)
 	world.add_child(sun)
 	# A light shines along its -Z: point -Z away from the sun.
 	sun.look_at_from_position(Vector3.ZERO, -toward_sun, Vector3.UP if absf(toward_sun.y) < 0.999 else Vector3.FORWARD)
 
 	var sky := Sky.new()
-	# Godot's physical sky with the camera exposure taken out of the sun (physical_sky.gdshader).
+	# The sky's uniforms change with the light (scale_light, later the time of day). Godot
+	# would then rebuild the radiance map (ambient and reflections) over several frames
+	# (INCREMENTAL, measured: 10 frames late); QUALITY rebuilds it in the frame of the change.
+	sky.process_mode = Sky.PROCESS_MODE_QUALITY
+	# The CIE clear sky in cd/m2 (cie_sky.gdshader). Godot multiplies the sky's output by
+	# the background intensity; the shader divides it out.
 	sky_material = ShaderMaterial.new()
-	sky_material.shader = preload("res://physical_sky.gdshader")
+	sky_material.shader = preload("res://cie_sky.gdshader")
 	sky.sky_material = sky_material
 	environment = Environment.new()
 	environment.background_mode = Environment.BG_SKY
 	environment.sky = sky
-	environment.background_intensity = sky_intensity
+	environment.background_intensity = 1.0
+	_set_sky("luminance_scale", 1.0 / environment.background_intensity)
+	_set_sky("sun_direction", toward_sun)
+	_apply_clear_sky()
 	_update_sun_disk()
 	environment.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 	environment.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
@@ -120,8 +132,8 @@ func add_to(world: Node3D) -> void:
 	var world_environment := WorldEnvironment.new()
 	world_environment.environment = environment
 	world.add_child(world_environment)
-	print("LIGHT time=%s sun_elevation_deg=%.2f sun_azimuth_deg=%.2f sun_lux=%.0f sun_kelvin=%.0f sky_intensity=%.0f" % [
-		time_text, sun_elevation_deg, sun_azimuth_deg, sun_lux, sun_kelvin, sky_intensity])
+	print("LIGHT time=%s sun_elevation_deg=%.2f sun_azimuth_deg=%.2f sun_lux=%.0f sun_kelvin=%.0f" % [
+		time_text, sun_elevation_deg, sun_azimuth_deg, sun_lux, sun_kelvin])
 
 # Fog from the meteorological visibility (OpenSCENARIO Fog visualRange, the WMO
 # meteorological optical range): contrast falls to 5 % at that distance, so the
@@ -130,8 +142,7 @@ func add_to(world: Node3D) -> void:
 const FOG_CONTRAST_THRESHOLD := 0.05
 # The airlight: fog lit by the day's light, scattering it as a white diffuser,
 # L = E_h / pi with E_h the horizontal illuminance: the direct sun (lux x sin elevation)
-# plus the sky, taken as DIFFUSE_FRACTION of it (a clear day; an approximation, memo 027).
-const DIFFUSE_FRACTION := 0.15
+# plus the sky (the clear sky's horizontal illuminance).
 var fog_airlight_nits := 0.0
 
 func _apply_fog() -> void:
@@ -142,7 +153,7 @@ func _apply_fog() -> void:
 		fog_effect.beta = 0.0
 		return
 	var visual_range := float(fog["visualRange"])
-	var horizontal_lux := sun_lux * maxf(0.0, sin(deg_to_rad(sun_elevation_deg))) * (1.0 + DIFFUSE_FRACTION)
+	var horizontal_lux := sun_lux * maxf(0.0, sin(deg_to_rad(sun_elevation_deg))) + float(clear_sky["diffuse_horizontal_lux"])
 	fog_airlight_nits = horizontal_lux / PI
 	fog_effect.beta = -log(FOG_CONTRAST_THRESHOLD) / visual_range
 	fog_effect.airlight_nits = fog_airlight_nits
@@ -180,18 +191,45 @@ func _apply_sun_weather() -> void:
 		sun_rgb = ColorTemperature.xy_to_rgb(model["xy"])
 	print("SUN elevation_deg=%.2f azimuth_deg=%.2f lux=%.0f xy=%.4f,%.4f" % [sun_elevation_deg, sun_azimuth_deg, sun_lux, model["xy"].x, model["xy"].y])
 
+# The sky for the sun's elevation and illuminance (sky_model.gd; memo 027): the zenith
+# luminance and colour table of the CIE clear sky and the ground below the horizon, lit
+# by the sun and the sky (its colour taken as the sun's).
+func _apply_clear_sky() -> void:
+	clear_sky = SkyModel.clear_sky(sun_elevation_deg, sun_lux)
+	_set_sky("zenith_luminance", clear_sky["zenith_luminance"])
+	_set_sky("ground_radiance", sun_rgb * float(clear_sky["ground_luminance"]))
+	_set_sky("colour_table", SkyModel.colour_table(sun_elevation_deg))
+	if sky_test_uniform_nits > 0.0:
+		for name in ["gradation_a", "indicatrix_c", "indicatrix_e"]:
+			_set_sky(name, 0.0)
+		var white := Image.create(1, 1, false, Image.FORMAT_RGBF)
+		white.fill(Color(1, 1, 1))
+		_set_sky("colour_table", ImageTexture.create_from_image(white))
+		_set_sky("zenith_luminance", sky_test_uniform_nits)
+		_set_sky("ground_radiance", Vector3.ONE * sky_test_uniform_nits)
+		print("SKY test uniform luminance=%.0f" % sky_test_uniform_nits)
+		return
+	print("SKY turbidity=%.3f zenith_luminance=%.0f diffuse_horizontal_lux=%.0f ground_luminance=%.0f" % [
+		clear_sky["turbidity"], clear_sky["zenith_luminance"], clear_sky["diffuse_horizontal_lux"], clear_sky["ground_luminance"]])
+
 func _update_sun_disk() -> void:
 	var half := SUN_ANGULAR_DIAMETER / 2.0
 	var solid_angle := TAU * (1.0 - cos(half))
 	var luminance := current_sun_lux / solid_angle
-	# Godot multiplies the sky output by the background intensity.
-	var radiance: Vector3 = sun_rgb * luminance / environment.background_intensity
-	sky_material.set_shader_parameter("sun_disk_radiance", radiance)
-	sky_material.set_shader_parameter("sun_disk_radius", half)
+	var radiance: Vector3 = sun_rgb * luminance
+	_set_sky("sun_disk_radiance", radiance)
+	_set_sky("sun_disk_radius", half)
+
+# Any change of the sky's uniforms makes Godot rebuild the radiance map (with QUALITY,
+# about 3 ms a frame, measured), so a uniform is set only when its value changes
+# (the exposure and the pixel angle are set for every frame drawn).
+func _set_sky(name: String, value: Variant) -> void:
+	if sky_material.get_shader_parameter(name) != value:
+		sky_material.set_shader_parameter(name, value)
 
 # The angle of one pixel of the image being drawn (smooths the sun disk's edge).
 func set_pixel_angle(focal_px: float) -> void:
-	sky_material.set_shader_parameter("pixel_angle", 1.0 / focal_px)
+	_set_sky("pixel_angle", 1.0 / focal_px)
 
 # Physical exposure at Godot's defaults (ISO 100, f/16, 1/100 s: Sunny 16). The camera
 # then takes its field of view from the focal length and its clip from frustum_near/far,
@@ -222,12 +260,9 @@ func apply_exposure(attributes: CameraAttributesPhysical, exposure: Dictionary) 
 	attributes.exposure_aperture = f_number
 	attributes.exposure_shutter_speed = 1.0 / shutter_s
 	attributes.exposure_multiplier = multiplier
-	# Godot's exposure normalization is multiplier / (1.2 x 2^EV100); the sky shader
-	# gets the sun multiplied by it. Scale it back to the Sunny 16 normalization so
-	# the sky's luminance does not depend on the camera.
+	# Godot's exposure normalization is multiplier / (1.2 x 2^EV100).
 	var normalization := multiplier / (1.2 * pow(2.0, _ev100(iso, f_number, shutter_s)))
-	var reference := 1.0 / (1.2 * pow(2.0, _ev100(SUNNY16_ISO, SUNNY16_F_NUMBER, SUNNY16_SHUTTER_S)))
-	sky_material.set_shader_parameter("sun_energy_scale", reference / normalization)
+	_set_sky("cubemap_scale", 1.0 / normalization)
 	fog_effect.exposure_normalization = normalization
 	# The schema's default mode is auto, but only when the profile has an exposure block.
 	# Godot's auto exposure is not used: it meters the mean luminance, so a few sun
@@ -244,14 +279,15 @@ func apply_exposure(attributes: CameraAttributesPhysical, exposure: Dictionary) 
 	auto_exposure.ev100_max = float(exposure.get("ev100_max", 22.0))
 
 # Scale all daylight by factor during a run (a test of the auto exposure's time response).
-# The sky shader takes the sun's energy to the power 0.625 (physical_sky.gdshader), so
-# the sky's intensity gets the rest (factor^0.375) for the sky to scale by factor too.
 func scale_light(factor: float) -> void:
 	sun.light_intensity_lux *= factor
 	current_sun_lux *= factor
-	environment.background_intensity *= pow(factor, 0.375)
+	for key in ["zenith_luminance", "diffuse_horizontal_lux", "ground_luminance"]:
+		clear_sky[key] = float(clear_sky[key]) * factor
+	_set_sky("zenith_luminance", clear_sky["zenith_luminance"])
+	_set_sky("ground_radiance", sun_rgb * float(clear_sky["ground_luminance"]))
 	_update_sun_disk()
-	print("LIGHT scaled factor=%.4f sun_lux=%.0f sky_intensity=%.0f" % [factor, sun.light_intensity_lux, environment.background_intensity])
+	print("LIGHT scaled factor=%.4f sun_lux=%.0f zenith_luminance=%.0f" % [factor, sun.light_intensity_lux, clear_sky["zenith_luminance"]])
 
 # Exposure value at ISO 100: log2(N^2 / t x 100 / S).
 static func _ev100(iso: float, f_number: float, shutter_s: float) -> float:
@@ -344,14 +380,17 @@ const CHART_PATCHES := [
 ]
 const PATCH_SIZE := 0.5
 
-# An optional 5th value scales the chart (to keep its apparent size at a distance).
+# An optional 5th value scales the chart (to keep its apparent size at a distance); an
+# optional 6th tilts it back by that many degrees (90: facing up, to measure the light
+# on a horizontal surface).
 static func add_test_chart(world: Node3D, ros_pose: PackedFloat64Array) -> void:
 	var chart := Node3D.new()
 	var scale_factor := ros_pose[4] if ros_pose.size() > 4 else 1.0
+	var tilt := ros_pose[5] if ros_pose.size() > 5 else 0.0
 	chart.name = "TestChart"
 	# ROS (x, y, z) -> Godot (-y, z, -x); ROS yaw (from North, counter-clockwise) -> rotation about Godot Y.
 	chart.position = Vector3(-ros_pose[1], ros_pose[2], -ros_pose[0])
-	chart.rotation = Vector3(0, deg_to_rad(ros_pose[3]), 0)
+	chart.rotation = Vector3(-deg_to_rad(tilt), deg_to_rad(ros_pose[3]), 0)
 	world.add_child(chart)
 	# The board faces the chart's local +Z (Godot); patches in a 3 x 3 grid.
 	for i in CHART_PATCHES.size():
@@ -364,6 +403,8 @@ static func add_test_chart(world: Node3D, ros_pose: PackedFloat64Array) -> void:
 		material.roughness = 1.0
 		material.metallic = 0.0
 		material.metallic_specular = 0.0
+		# Lambertian (Godot's default Burley is about 8 % brighter here; memo 027).
+		material.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT
 		patch.material_override = material
 		patch.position = Vector3((i % 3 - 1) * PATCH_SIZE * scale_factor, (1 - i / 3) * PATCH_SIZE * scale_factor, 0)
 		patch.name = CHART_PATCHES[i][0]
