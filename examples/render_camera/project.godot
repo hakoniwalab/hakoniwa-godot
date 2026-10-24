@@ -22,3 +22,4 @@ common/max_physics_steps_per_frame=1
 
 anti_aliasing/quality/msaa_3d=0
 anti_aliasing/quality/use_taa=false
+lights_and_shadows/use_physical_light_units=true

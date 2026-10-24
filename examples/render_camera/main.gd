@@ -16,9 +16,13 @@ extends Node
 #   --world-glb=<path>          draw this glTF world (loaded at run time) instead of the boxes
 #   --camera-pose=x,y,z,yaw_deg use this camera pose (ROS world frame, m and deg) instead of the request's
 #   --save-frame-dir=<dir>      save the 10th rendered frame of each size as PNG
+#   --test-chart=x,y,z,yaw_deg  place a reflectance test chart (ROS world frame, m and deg)
+#   --sun-time=, --sun-lux=, --sun-kelvin=, --sky-intensity=, --latitude=, --longitude=
+#                               daylight in physical units (lighting.gd)
 
 const SimNodeScript = preload("res://addons/hakoniwa/scripts/hakoniwa_simulation_node.gd")
 const CodecNodeScript = preload("res://addons/hakoniwa/scripts/hakoniwa_codec_node.gd")
+const Lighting = preload("res://lighting.gd")
 const ASSET_NAME := "GodotRenderCamera"
 const PACKAGE := "hako_srv_msgs"
 const LEGACY_SERVICE_NAME := "HakoCamera/RenderCamera"
@@ -39,6 +43,12 @@ var _request_packet := "RenderCameraRequestPacket"
 var _response_packet := "RenderCameraResponsePacket"
 var _frame_service := false
 var _profiles := {}
+var _lighting = Lighting.new()
+var _camera_attributes: CameraAttributesPhysical
+var _test_chart := PackedFloat64Array()
+# Simulation time of each camera's previous frame. force_draw's frame step is the
+# time effects that adapt over time (auto exposure) see; 0 would freeze them.
+var _last_frame_usec := {}
 
 func _ready() -> void:
 	# --headless uses the dummy renderer: nothing is drawn and get_image() returns null.
@@ -69,6 +79,10 @@ func _ready() -> void:
 			_response_packet = "RenderCameraFrameResponsePacket"
 		elif arg.begins_with("--profiles="):
 			profiles_dir = arg.trim_prefix("--profiles=")
+		elif arg.begins_with("--test-chart="):
+			_test_chart = arg.trim_prefix("--test-chart=").split_floats(",")
+		elif _lighting.parse_option(arg):
+			pass
 	if service_json.is_empty():
 		_quit("--service-json=<path> is required")
 		return
@@ -202,12 +216,11 @@ func _handle_frame_request(registry: Node, body: Dictionary) -> void:
 		var size := Vector2i(profile["width"], profile["height"])
 		_resize_viewport(size)
 		_camera.keep_aspect = Camera3D.KEEP_WIDTH
-		_camera.fov = rad_to_deg(profile["horizontal_fov"])
-		_camera.near = profile["near"]
-		_camera.far = profile["far"]
+		Lighting.apply_lens(_camera_attributes, profile["horizontal_fov"], profile["near"], profile["far"])
+		_lighting.apply_exposure(_camera_attributes, profile["exposure"])
 		_apply_ros_enu_pose(body["camera_pose"])
 		_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
-		RenderingServer.force_draw(false)
+		RenderingServer.force_draw(false, _frame_step_sec(camera_name, sim_time_usec))
 	var readback_start := Time.get_ticks_usec()
 	if outputs & 1:
 		image = _viewport.get_texture().get_image()
@@ -290,8 +303,18 @@ func _load_profile(path: String) -> void:
 	if values[0].is_empty() or values[1] <= 0 or values[2] <= 0 or values[4] <= 0.0 or values[5] <= 0.0 or values[6] <= values[5]:
 		_profile_error(path, "/spec", "contains an invalid value")
 		return
+	var exposure = _profile_value(root, "/spec/photometric/exposure")[1]
+	if exposure != null and typeof(exposure) != TYPE_DICTIONARY:
+		_profile_error(path, "/spec/photometric/exposure", "must be an object")
+		return
 	_profiles[values[0]] = {"width": values[1], "height": values[2], "format": values[3],
-		"horizontal_fov": float(values[4]), "near": float(values[5]), "far": float(values[6])}
+		"horizontal_fov": float(values[4]), "near": float(values[5]), "far": float(values[6]),
+		"exposure": exposure if exposure != null else {}}
+
+func _frame_step_sec(camera_name: String, sim_time_usec: int) -> float:
+	var last: int = _last_frame_usec.get(camera_name, sim_time_usec)
+	_last_frame_usec[camera_name] = sim_time_usec
+	return maxf(0.0, (sim_time_usec - last) / 1000000.0)
 
 func _profile_value(root: Dictionary, pointer: String) -> Array:
 	var value = root
@@ -329,10 +352,9 @@ func _build_world() -> bool:
 	add_child(_viewport)
 	var world := Node3D.new()
 	_viewport.add_child(world)
-	var sun := DirectionalLight3D.new()
-	sun.rotation_degrees = Vector3(-55, -30, 0)
-	sun.shadow_enabled = true
-	world.add_child(sun)
+	_lighting.add_to(world)
+	if _test_chart.size() == 4:
+		Lighting.add_test_chart(world, _test_chart)
 	if not _world_glb.is_empty():
 		return _load_world_glb(world)
 	var box := BoxMesh.new()
@@ -358,9 +380,12 @@ func _build_world() -> bool:
 
 func _add_camera(world: Node3D) -> void:
 	_camera = Camera3D.new()
-	_camera.fov = 70.0
-	_camera.near = 0.1
-	_camera.far = 1000.0
+	# Physical exposure; the attributes also set the field of view and the clip.
+	# The legacy service keeps its 70 degree vertical field of view.
+	_camera_attributes = Lighting.make_camera_attributes()
+	_camera.attributes = _camera_attributes
+	_camera.keep_aspect = Camera3D.KEEP_HEIGHT
+	Lighting.apply_lens(_camera_attributes, deg_to_rad(70.0), 0.1, 1000.0)
 	world.add_child(_camera)
 
 # The city GLB is "X=East, Y=Up, Z=-North" (a local ENU frame), which is Godot's frame
@@ -375,13 +400,6 @@ func _load_world_glb(world: Node3D) -> bool:
 		return false
 	var scene := gltf.generate_scene(state)
 	world.add_child(scene)
-	var env := WorldEnvironment.new()
-	env.environment = Environment.new()
-	env.environment.background_mode = Environment.BG_COLOR
-	env.environment.background_color = Color(0.55, 0.7, 0.9)
-	env.environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.environment.ambient_light_color = Color(0.6, 0.6, 0.6)
-	world.add_child(env)
 	_rotor = MeshInstance3D.new()
 	world.add_child(_rotor)
 	_add_camera(world)
