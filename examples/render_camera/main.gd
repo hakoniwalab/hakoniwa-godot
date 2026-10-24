@@ -255,6 +255,7 @@ func _handle_frame_request(registry: Node, body: Dictionary) -> void:
 		if warp:
 			drawn_focal = lens.cube_focal if lens.cube else lens.source_focal
 		_lighting.lens_effects.set_geometry(lens, drawn_focal, _camera.global_transform.basis)
+		_lighting.set_pixel_angle(drawn_focal)
 		if warp:
 			if _warp_viewport.size != size:
 				_warp_viewport.size = size
@@ -268,11 +269,15 @@ func _handle_frame_request(registry: Node, body: Dictionary) -> void:
 			_light_step_done = true
 		if not (warp and lens.cube):
 			_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
-		RenderingServer.force_draw(false, _frame_step_sec(camera_name, sim_time_usec))
+		var frame_step := _frame_step_sec(camera_name, sim_time_usec)
+		_lighting.auto_exposure.begin_frame(camera_name)
+		RenderingServer.force_draw(false, frame_step)
 	var readback_start := Time.get_ticks_usec()
 	if outputs & 1:
 		var target := _warp_viewport if not profile["lens"].is_ideal() else _viewport
 		image = target.get_texture().get_image()
+		# The frame is drawn: meter it for the next frames of this camera.
+		_lighting.auto_exposure.end_frame(_last_frame_step)
 	var convert_start := Time.get_ticks_usec()
 	if image != null:
 		image.convert(Image.FORMAT_RGB8)
@@ -434,10 +439,13 @@ func _print_probe(image: Image, sim_time_usec: int) -> void:
 	sum /= 81.0
 	print("PROBE sim_time_usec=%d r=%.1f g=%.1f b=%.1f" % [sim_time_usec, sum.x, sum.y, sum.z])
 
+var _last_frame_step := 0.0
+
 func _frame_step_sec(camera_name: String, sim_time_usec: int) -> float:
 	var last: int = _last_frame_usec.get(camera_name, sim_time_usec)
 	_last_frame_usec[camera_name] = sim_time_usec
-	return maxf(0.0, (sim_time_usec - last) / 1000000.0)
+	_last_frame_step = maxf(0.0, (sim_time_usec - last) / 1000000.0)
+	return _last_frame_step
 
 func _profile_value(root: Dictionary, pointer: String) -> Array:
 	var value = root

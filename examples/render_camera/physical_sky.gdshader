@@ -5,6 +5,11 @@
 //   1. sun_energy is multiplied by sun_energy_scale (the camera exposure taken out)
 //   2. the radiance cubemap pass (AT_CUBEMAP_PASS) is multiplied by sun_energy_scale
 //   3. the night sky texture and use_debanding options are left out
+//   4. the sun disk: Godot's disk (light angular distance, through the same power curve
+//      as the sky) is replaced by a physical one added after the curve (memo 027):
+//      angular diameter 0.53 deg, luminance = sun illuminance / disk solid angle,
+//      edge smoothed over one pixel so the summed disk keeps its energy; not in the
+//      radiance cubemap (the sun already lights the scene as the directional light)
 // Why (hakoniwa-scenario memo 024):
 // with physical light units Godot passes the sun to sky shaders as lux times the
 // camera's exposure normalization, and this shader raises it to a power
@@ -30,6 +35,12 @@ uniform float sun_disk_scale : hint_range(0, 360) = 1.0;
 uniform vec4 ground_color : source_color = vec4(0.1, 0.07, 0.034, 1.0);
 uniform float exposure : hint_range(0, 128) = 1.0;
 uniform float sun_energy_scale = 1.0;
+// Physical sun disk (change 4): its colour times luminance in cd/m2, divided by the
+// sky's background intensity (Godot multiplies the sky output by it); half its
+// angular diameter; and the angle of one pixel (to smooth the edge).
+uniform vec3 sun_disk_radiance = vec3(0.0);
+uniform float sun_disk_radius = 0.004625;
+uniform float pixel_angle = 0.002;
 
 const vec3 UP = vec3(0.0, 1.0, 0.0);
 
@@ -79,17 +90,15 @@ void sky() {
 		// Hack in the ground color.
 		Lin *= mix(ground_color.rgb, vec3(1.0), smoothstep(-0.1, 0.1, dot(UP, EYEDIR)));
 
-		// Solar disk and out-scattering.
-		float sunAngularDiameterCos = cos(LIGHT0_SIZE * sun_disk_scale);
-		float sunAngularDiameterCos2 = cos(LIGHT0_SIZE * sun_disk_scale * 0.5);
-		float sundisk = smoothstep(sunAngularDiameterCos, sunAngularDiameterCos2, cos_theta);
-		vec3 L0 = (sun_energy * extinction) * sundisk * LIGHT0_COLOR;
-
-		vec3 color = Lin + L0;
+		vec3 color = Lin;
 		COLOR = pow(color, vec3(1.0 / (1.2 + (1.2 * sun_fade))));
 		COLOR *= exposure;
 		if (AT_CUBEMAP_PASS) {
 			COLOR *= sun_energy_scale;
+		} else {
+			float angle = acos(clamp(cos_theta, -1.0, 1.0));
+			float coverage = clamp((sun_disk_radius - angle) / pixel_angle + 0.5, 0.0, 1.0);
+			COLOR += coverage * sun_disk_radiance;
 		}
 	} else {
 		COLOR = vec3(0.0);

@@ -1,6 +1,7 @@
 extends RefCounted
 
 const ColorTemperature = preload("res://color_temperature.gd")
+const SunModel = preload("res://sun_model.gd")
 
 # Daylight in physical units (C3, hakoniwa-scenario memo 024): the sun in lux, the sky
 # in nits, ambient and reflections from the sky, and a camera with physical exposure
@@ -30,10 +31,14 @@ var sun_lux := DEFAULT_SUN_LUX
 var sun_kelvin := DEFAULT_SUN_KELVIN
 var sky_intensity := DEFAULT_SKY_INTENSITY
 var sky_material: ShaderMaterial
+# The sun as seen: angular diameter 0.53 deg; its luminance is the sun's illuminance
+# (normal to the sun) over the disk's solid angle (physical_sky.gdshader, memo 027).
+const SUN_ANGULAR_DIAMETER := deg_to_rad(0.53)
+var current_sun_lux := DEFAULT_SUN_LUX
 var sun: DirectionalLight3D
-# Auto exposure speed (CameraAttributes.auto_exposure_speed) when the profile has no
+# Auto exposure speed, stops per second of simulation time, when the profile has no
 # exposure.adaptation_speed; --auto-exposure-speed= changes it for tests.
-var auto_exposure_speed := 0.5
+var auto_exposure_speed := 2.0
 # Weather (C5, hakoniwa-scenario memo 027), OpenSCENARIO Weather names: a JSON file
 # given with --weather=. Fog: fog.visualRange (m).
 var weather := {}
@@ -41,7 +46,14 @@ var environment: Environment
 var white_balance = preload("res://white_balance.gd").new()
 var lens_effects = preload("res://lens_effects.gd").new()
 var fog_effect = preload("res://fog_effect.gd").new()
+var auto_exposure = preload("res://auto_exposure.gd").new()
 var sun_elevation_deg := 0.0
+# The sun's colour (linear sRGB, luminance 1): from the clear-sky model (sun_model.gd)
+# unless --sun-kelvin is given. --sun-lux or the weather's sun.illuminance override the
+# model's illuminance.
+var sun_rgb := Vector3.ONE
+var _sun_lux_given := false
+var _sun_kelvin_given := false
 var sun_azimuth_deg := 0.0
 
 # Options (after --): --sun-time=ISO8601 with offset, --sun-lux=, --sun-kelvin=,
@@ -51,8 +63,10 @@ func parse_option(arg: String) -> bool:
 		time_text = arg.trim_prefix("--sun-time=")
 	elif arg.begins_with("--sun-lux="):
 		sun_lux = arg.trim_prefix("--sun-lux=").to_float()
+		_sun_lux_given = true
 	elif arg.begins_with("--sun-kelvin="):
 		sun_kelvin = arg.trim_prefix("--sun-kelvin=").to_float()
+		_sun_kelvin_given = true
 	elif arg.begins_with("--sky-intensity="):
 		sky_intensity = arg.trim_prefix("--sky-intensity=").to_float()
 	elif arg.begins_with("--latitude="):
@@ -76,11 +90,13 @@ func add_to(world: Node3D) -> void:
 	sun = DirectionalLight3D.new()
 	sun.name = "Sun"
 	_set_sun_colour(sun)
+	current_sun_lux = sun_lux
 	sun.shadow_enabled = true
 	sun.sky_mode = DirectionalLight3D.SKY_MODE_LIGHT_AND_SKY
 	var position := _sun_position()
 	sun_elevation_deg = position.x
 	sun_azimuth_deg = position.y
+	_apply_sun_weather()
 	var toward_sun := _direction(sun_azimuth_deg, sun_elevation_deg)
 	world.add_child(sun)
 	# A light shines along its -Z: point -Z away from the sun.
@@ -95,6 +111,7 @@ func add_to(world: Node3D) -> void:
 	environment.background_mode = Environment.BG_SKY
 	environment.sky = sky
 	environment.background_intensity = sky_intensity
+	_update_sun_disk()
 	environment.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 	environment.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	# Linear until a profile asks for a tone map (apply_color).
@@ -137,13 +154,44 @@ func _apply_fog() -> void:
 # illuminance (luminance Y) stays sun_lux.
 func _set_sun_colour(sun: DirectionalLight3D) -> void:
 	sun.light_temperature = 6500.0
-	var wanted: Vector3 = ColorTemperature.white_rgb(sun_kelvin)
+	var wanted: Vector3 = sun_rgb
 	var godot: Vector3 = ColorTemperature.godot_light_rgb(6500.0)
 	var colour := Vector3(wanted.x / godot.x, wanted.y / godot.y, wanted.z / godot.z)
 	var largest := maxf(colour.x, maxf(colour.y, colour.z))
 	colour /= largest
 	sun.light_color = Color(colour.x, colour.y, colour.z).linear_to_srgb()
 	sun.light_intensity_lux = sun_lux * largest
+
+# The weather's sun (OpenSCENARIO Sun: azimuth from north clockwise and elevation, in
+# radians; illuminance in lx) replaces the computed position and illuminance; the
+# clear-sky model gives the illuminance and colour otherwise (memo 027).
+func _apply_sun_weather() -> void:
+	var given: Dictionary = weather.get("sun", {})
+	if given.has("azimuth"):
+		sun_azimuth_deg = rad_to_deg(float(given["azimuth"]))
+	if given.has("elevation"):
+		sun_elevation_deg = rad_to_deg(float(given["elevation"]))
+	var model := SunModel.direct_sun(sun_elevation_deg)
+	if not _sun_lux_given:
+		sun_lux = float(given.get("illuminance", model["illuminance"]))
+	if _sun_kelvin_given:
+		sun_rgb = ColorTemperature.white_rgb(sun_kelvin)
+	else:
+		sun_rgb = ColorTemperature.xy_to_rgb(model["xy"])
+	print("SUN elevation_deg=%.2f azimuth_deg=%.2f lux=%.0f xy=%.4f,%.4f" % [sun_elevation_deg, sun_azimuth_deg, sun_lux, model["xy"].x, model["xy"].y])
+
+func _update_sun_disk() -> void:
+	var half := SUN_ANGULAR_DIAMETER / 2.0
+	var solid_angle := TAU * (1.0 - cos(half))
+	var luminance := current_sun_lux / solid_angle
+	# Godot multiplies the sky output by the background intensity.
+	var radiance: Vector3 = sun_rgb * luminance / environment.background_intensity
+	sky_material.set_shader_parameter("sun_disk_radiance", radiance)
+	sky_material.set_shader_parameter("sun_disk_radius", half)
+
+# The angle of one pixel of the image being drawn (smooths the sun disk's edge).
+func set_pixel_angle(focal_px: float) -> void:
+	sky_material.set_shader_parameter("pixel_angle", 1.0 / focal_px)
 
 # Physical exposure at Godot's defaults (ISO 100, f/16, 1/100 s: Sunny 16). The camera
 # then takes its field of view from the focal length and its clip from frustum_near/far,
@@ -165,7 +213,11 @@ func apply_exposure(attributes: CameraAttributesPhysical, exposure: Dictionary) 
 	var iso := float(exposure.get("iso", SUNNY16_ISO))
 	var f_number := float(exposure.get("f_number", SUNNY16_F_NUMBER))
 	var shutter_s := float(exposure.get("shutter_speed_s", SUNNY16_SHUTTER_S))
-	var multiplier := pow(2.0, float(exposure.get("compensation_ev", 0.0)))
+	var auto := not exposure.is_empty() and String(exposure.get("mode", "auto")) == "auto"
+	var compensation := float(exposure.get("compensation_ev", 0.0))
+	# In auto mode the camera draws at the base exposure (iso, f-number, shutter) and
+	# auto_exposure.gd adds the metered exposure (with the compensation) as a gain.
+	var multiplier := 1.0 if auto else pow(2.0, compensation)
 	attributes.exposure_sensitivity = iso
 	attributes.exposure_aperture = f_number
 	attributes.exposure_shutter_speed = 1.0 / shutter_s
@@ -178,15 +230,27 @@ func apply_exposure(attributes: CameraAttributesPhysical, exposure: Dictionary) 
 	sky_material.set_shader_parameter("sun_energy_scale", reference / normalization)
 	fog_effect.exposure_normalization = normalization
 	# The schema's default mode is auto, but only when the profile has an exposure block.
-	attributes.auto_exposure_enabled = not exposure.is_empty() and String(exposure.get("mode", "auto")) == "auto"
-	attributes.auto_exposure_speed = float(exposure.get("adaptation_speed", auto_exposure_speed))
+	# Godot's auto exposure is not used: it meters the mean luminance, so a few sun
+	# pixels set the exposure (memo 027); auto_exposure.gd meters a histogram.
+	attributes.auto_exposure_enabled = false
+	auto_exposure.enabled = auto
+	auto_exposure.base_ev100 = _ev100(iso, f_number, shutter_s)
+	auto_exposure.compensation_ev = compensation
+	var metering: Dictionary = exposure.get("metering", {})
+	auto_exposure.low_percentile = float(metering.get("low_percentile", 10.0))
+	auto_exposure.high_percentile = float(metering.get("high_percentile", 90.0))
+	auto_exposure.speed_stops_per_s = float(exposure.get("adaptation_speed", auto_exposure_speed))
+	auto_exposure.ev100_min = float(exposure.get("ev100_min", -4.0))
+	auto_exposure.ev100_max = float(exposure.get("ev100_max", 22.0))
 
 # Scale all daylight by factor during a run (a test of the auto exposure's time response).
 # The sky shader takes the sun's energy to the power 0.625 (physical_sky.gdshader), so
 # the sky's intensity gets the rest (factor^0.375) for the sky to scale by factor too.
 func scale_light(factor: float) -> void:
 	sun.light_intensity_lux *= factor
+	current_sun_lux *= factor
 	environment.background_intensity *= pow(factor, 0.375)
+	_update_sun_disk()
 	print("LIGHT scaled factor=%.4f sun_lux=%.0f sky_intensity=%.0f" % [factor, sun.light_intensity_lux, environment.background_intensity])
 
 # Exposure value at ISO 100: log2(N^2 / t x 100 / S).
@@ -217,7 +281,8 @@ func attach_to(camera: Camera3D) -> void:
 	# Lens effects first (they happen in the lens), then white balance (the sensor).
 	# The atmosphere (fog), then the lens, then the sensor (white balance): the order light
 	# meets them.
-	compositor.compositor_effects = [fog_effect, lens_effects, white_balance]
+	# Metering (auto exposure) sees what reaches the sensor, after the lens.
+	compositor.compositor_effects = [fog_effect, lens_effects, auto_exposure, white_balance]
 	camera.compositor = compositor
 
 func apply_color(photometric: Dictionary) -> void:
