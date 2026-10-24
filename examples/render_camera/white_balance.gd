@@ -44,10 +44,13 @@ var _pipeline: RID
 func _init() -> void:
 	effect_callback_type = EFFECT_CALLBACK_TYPE_POST_TRANSPARENT
 	_rd = RenderingServer.get_rendering_device()
-	RenderingServer.call_on_render_thread(_create_pipeline)
+	# No RenderingDevice (--headless, Compatibility renderer): nothing to draw, and
+	# _render_callback is not called; the gains can still be computed (tests).
+	if _rd != null:
+		RenderingServer.call_on_render_thread(_create_pipeline)
 
 func _notification(what: int) -> void:
-	if what == NOTIFICATION_PREDELETE and _shader.is_valid():
+	if what == NOTIFICATION_PREDELETE and _rd != null and _shader.is_valid():
 		_rd.free_rid(_shader)
 
 # Compiled from source at run time: a .glsl file needs the editor's import, which a

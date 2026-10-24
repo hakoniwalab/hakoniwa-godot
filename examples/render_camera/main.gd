@@ -17,7 +17,10 @@ extends Node
 #   --camera-pose=x,y,z,yaw_deg use this camera pose (ROS world frame, m and deg) instead of the request's
 #   --save-frame-dir=<dir>      save the 10th rendered frame of each size as PNG
 #   --test-chart=x,y,z,yaw_deg  place a reflectance test chart (ROS world frame, m and deg)
-#   --sun-time=, --sun-lux=, --sun-kelvin=, --sky-intensity=, --latitude=, --longitude=
+#   --sun-time=, --sun-lux=, --sun-kelvin=, --sky-intensity=, --latitude=, --longitude=,
+#   --auto-exposure-speed=      daylight in physical units, auto exposure speed (lighting.gd)
+#   --light-step=sim_sec,factor scale all daylight by factor from this simulation time
+#   --probe=x,y                 print the mean 8-bit RGB of 9 x 9 pixels at (x, y) every frame
 #                               daylight in physical units (lighting.gd)
 
 const SimNodeScript = preload("res://addons/hakoniwa/scripts/hakoniwa_simulation_node.gd")
@@ -46,6 +49,9 @@ var _profiles := {}
 var _lighting = Lighting.new()
 var _camera_attributes: CameraAttributesPhysical
 var _test_chart := PackedFloat64Array()
+var _light_step := PackedFloat64Array()
+var _light_step_done := false
+var _probe := PackedInt32Array()
 # Simulation time of each camera's previous frame. force_draw's frame step is the
 # time effects that adapt over time (auto exposure) see; 0 would freeze them.
 var _last_frame_usec := {}
@@ -79,6 +85,11 @@ func _ready() -> void:
 			_response_packet = "RenderCameraFrameResponsePacket"
 		elif arg.begins_with("--profiles="):
 			profiles_dir = arg.trim_prefix("--profiles=")
+		elif arg.begins_with("--light-step="):
+			_light_step = arg.trim_prefix("--light-step=").split_floats(",")
+		elif arg.begins_with("--probe="):
+			var xy := arg.trim_prefix("--probe=").split_floats(",")
+			_probe = PackedInt32Array([int(xy[0]), int(xy[1])])
 		elif arg.begins_with("--test-chart="):
 			_test_chart = arg.trim_prefix("--test-chart=").split_floats(",")
 		elif _lighting.parse_option(arg):
@@ -220,6 +231,9 @@ func _handle_frame_request(registry: Node, body: Dictionary) -> void:
 		_lighting.apply_exposure(_camera_attributes, profile["exposure"])
 		_lighting.apply_color(profile["photometric"])
 		_apply_ros_enu_pose(body["camera_pose"])
+		if _light_step.size() == 2 and not _light_step_done and sim_time_usec >= int(_light_step[0] * 1000000.0):
+			_lighting.scale_light(_light_step[1])
+			_light_step_done = true
 		_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 		RenderingServer.force_draw(false, _frame_step_sec(camera_name, sim_time_usec))
 	var readback_start := Time.get_ticks_usec()
@@ -228,6 +242,8 @@ func _handle_frame_request(registry: Node, body: Dictionary) -> void:
 	var convert_start := Time.get_ticks_usec()
 	if image != null:
 		image.convert(Image.FORMAT_RGB8)
+		if _probe.size() == 2:
+			_print_probe(image, sim_time_usec)
 		var rgb: Dictionary = response["body"]["rgb"]
 		_set_image_header(rgb, sim_time_usec, camera_name)
 		rgb["height"] = profile["height"]
@@ -317,6 +333,15 @@ func _load_profile(path: String) -> void:
 	_profiles[values[0]] = {"width": values[1], "height": values[2], "format": values[3],
 		"horizontal_fov": float(values[4]), "near": float(values[5]), "far": float(values[6]),
 		"exposure": exposure, "photometric": photometric}
+
+func _print_probe(image: Image, sim_time_usec: int) -> void:
+	var sum := Vector3.ZERO
+	for dy in range(-4, 5):
+		for dx in range(-4, 5):
+			var c := image.get_pixel(_probe[0] + dx, _probe[1] + dy)
+			sum += Vector3(c.r8, c.g8, c.b8)
+	sum /= 81.0
+	print("PROBE sim_time_usec=%d r=%.1f g=%.1f b=%.1f" % [sim_time_usec, sum.x, sum.y, sum.z])
 
 func _frame_step_sec(camera_name: String, sim_time_usec: int) -> float:
 	var last: int = _last_frame_usec.get(camera_name, sim_time_usec)

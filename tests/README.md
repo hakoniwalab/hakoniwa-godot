@@ -16,6 +16,20 @@
 
 ## Smoke Tests
 
+### RenderCamera photometric calculations
+
+`examples/render_camera` の色温度・ホワイトバランス・露出・太陽位置・時刻解析を、描画なしで確認する。
+
+```bash
+GODOT_BIN=${GODOT_BIN:-/Applications/Godot_mono.app/Contents/MacOS/Godot}
+"${GODOT_BIN}" --headless --path examples/render_camera --script res://tests/test_photometric.gd
+```
+
+成功条件:
+
+- 終了コード 0
+- `PHOTOMETRIC_TEST_OK`
+
 ### 1. Codec / Endpoint Smoke
 
 対象:

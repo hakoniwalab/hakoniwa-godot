@@ -30,6 +30,10 @@ var sun_lux := DEFAULT_SUN_LUX
 var sun_kelvin := DEFAULT_SUN_KELVIN
 var sky_intensity := DEFAULT_SKY_INTENSITY
 var sky_material: ShaderMaterial
+var sun: DirectionalLight3D
+# Auto exposure speed (CameraAttributes.auto_exposure_speed) when the profile has no
+# exposure.adaptation_speed; --auto-exposure-speed= changes it for tests.
+var auto_exposure_speed := 0.5
 var environment: Environment
 var white_balance = preload("res://white_balance.gd").new()
 var sun_elevation_deg := 0.0
@@ -48,6 +52,8 @@ func parse_option(arg: String) -> bool:
 		sky_intensity = arg.trim_prefix("--sky-intensity=").to_float()
 	elif arg.begins_with("--latitude="):
 		latitude = arg.trim_prefix("--latitude=").to_float()
+	elif arg.begins_with("--auto-exposure-speed="):
+		auto_exposure_speed = arg.trim_prefix("--auto-exposure-speed=").to_float()
 	elif arg.begins_with("--longitude="):
 		longitude = arg.trim_prefix("--longitude=").to_float()
 	else:
@@ -55,7 +61,7 @@ func parse_option(arg: String) -> bool:
 	return true
 
 func add_to(world: Node3D) -> void:
-	var sun := DirectionalLight3D.new()
+	sun = DirectionalLight3D.new()
 	sun.name = "Sun"
 	_set_sun_colour(sun)
 	sun.shadow_enabled = true
@@ -134,6 +140,15 @@ func apply_exposure(attributes: CameraAttributesPhysical, exposure: Dictionary) 
 	sky_material.set_shader_parameter("sun_energy_scale", reference / normalization)
 	# The schema's default mode is auto, but only when the profile has an exposure block.
 	attributes.auto_exposure_enabled = not exposure.is_empty() and String(exposure.get("mode", "auto")) == "auto"
+	attributes.auto_exposure_speed = float(exposure.get("adaptation_speed", auto_exposure_speed))
+
+# Scale all daylight by factor during a run (a test of the auto exposure's time response).
+# The sky shader takes the sun's energy to the power 0.625 (physical_sky.gdshader), so
+# the sky's intensity gets the rest (factor^0.375) for the sky to scale by factor too.
+func scale_light(factor: float) -> void:
+	sun.light_intensity_lux *= factor
+	environment.background_intensity *= pow(factor, 0.375)
+	print("LIGHT scaled factor=%.4f sun_lux=%.0f sky_intensity=%.0f" % [factor, sun.light_intensity_lux, environment.background_intensity])
 
 # Exposure value at ISO 100: log2(N^2 / t x 100 / S).
 static func _ev100(iso: float, f_number: float, shutter_s: float) -> float:
