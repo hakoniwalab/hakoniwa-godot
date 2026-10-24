@@ -1,6 +1,0 @@
-{
-    "message_script_roots": [],
-    "extensions": [
-        "res://addons/hakoniwa/codecs/hako_srv_msgs_codec.gdextension"
-    ]
-}
